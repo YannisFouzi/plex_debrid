@@ -1078,7 +1078,7 @@ class media:
     def collect(self, refresh_=True):
         for refresh_service in refresh():
             if refresh_service.__module__ == self.__module__ or (self.__module__ in ["content.services.trakt", "releases", "content.services.overseerr", "content.services.plex"] and refresh_service.__module__ in ["content.services.plex", "content.services.jellyfin"]):
-                if refresh_ or refresh_service.name == "Plex Lables":
+                if refresh_ or refresh_service.name == "Plex Labels":
                     refresh_service(self)
             elif self.__module__ in ["content.services.plex", "content.services.overseerr"] and refresh_service.__module__ == "content.services.trakt":
                 try:

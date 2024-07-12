@@ -381,11 +381,11 @@ If github is not your cup of tea;
 ></details>
 >
 ><details>
->  <summary><b><u><img src="https://app.plex.tv/desktop/favicon.ico" height="16"> Plex lables:</u></b></summary>
+>  <summary><b><u><img src="https://app.plex.tv/desktop/favicon.ico" height="16"> Plex labels:</u></b></summary>
 >  
->  - To add automatic version and user lables to your downloaded content, navigate to '/Settings/Library Service/Library update service/Edit/'
+>  - To add automatic version and user labels to your downloaded content, navigate to '/Settings/Library Service/Library update service/Edit/'
 >  - This requires a Plex library refresh to be set up aswell (see above).
->  - Lables that will be added are: "From: ..." for each user that watchlisted this item, "Version: ..." for each version that was downloaded.
+>  - Labels that will be added are: "From: ..." for each user that watchlisted this item, "Version: ..." for each version that was downloaded.
 >
 ></details>
 >
