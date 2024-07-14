@@ -492,6 +492,15 @@ If github is not your cup of tea;
 >  - You can find a full list of all possible parameters and their respective values at "https://panel.orionoid.com/" in the "Developers" menu, section "API Docs" under "Stream API".
 >
 ></details>
+>
+><details>
+>  <summary><b><u>zilean:</u></b></summary>
+>  
+>  - Zilean is a service that allows you to search for [DebridMediaManager](https://github.com/debridmediamanager/debrid-media-manager) sourced arr-less content.
+>  - You can integrate zilean into plex_debrid by navigating to '/Settings/Scraper/Sources/Edit/Add source/zilean'.
+>  - Details of this project can be found at https://github.com/iPromKnight/zilean
+>
+></details>
  
 ### :arrow_down_small: Debrid Services:
 
