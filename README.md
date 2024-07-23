@@ -24,42 +24,42 @@ Here's a [detailed guide / walkthrough](https://elfhosted.com/guides/media/strea
 		<tr>
             <td align="center">
                 <a href="https://github.com/itsToggle">
-                    <img src="https://avatars.githubusercontent.com/u/71379623?v=4" width="100;" alt="itsToggle"/>
+                    <img src="https://avatars.githubusercontent.com/u/71379623?v=4" width="64;" alt="itsToggle"/>
                     <br />
                     <sub><b>itsToggle</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/funkypenguin">
-                    <img src="https://avatars.githubusercontent.com/u/1524686?v=4" width="100;" alt="funkypenguin"/>
+                    <img src="https://avatars.githubusercontent.com/u/1524686?v=4" width="64;" alt="funkypenguin"/>
                     <br />
-                    <sub><b>David Young</b></sub>
+                    <sub><b>funkypenguin</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/themegaphoenix">
-                    <img src="https://avatars.githubusercontent.com/u/9766462?v=4" width="100;" alt="themegaphoenix"/>
+                    <img src="https://avatars.githubusercontent.com/u/9766462?v=4" width="64;" alt="themegaphoenix"/>
                     <br />
-                    <sub><b>Dhanil Capil Duvarcadas</b></sub>
+                    <sub><b>themegaphoenix</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/sirstudly">
-                    <img src="https://avatars.githubusercontent.com/u/12377354?v=4" width="100;" alt="sirstudly"/>
+                    <img src="https://avatars.githubusercontent.com/u/12377354?v=4" width="64;" alt="sirstudly"/>
                     <br />
                     <sub><b>sirstudly</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/KaceCottam">
-                    <img src="https://avatars.githubusercontent.com/u/28381193?v=4" width="100;" alt="KaceCottam"/>
+                    <img src="https://avatars.githubusercontent.com/u/28381193?v=4" width="64;" alt="KaceCottam"/>
                     <br />
-                    <sub><b>Kace Cottam</b></sub>
+                    <sub><b>KaceCottam</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/KamalF">
-                    <img src="https://avatars.githubusercontent.com/u/8170277?v=4" width="100;" alt="KamalF"/>
+                    <img src="https://avatars.githubusercontent.com/u/8170277?v=4" width="64;" alt="KamalF"/>
                     <br />
                     <sub><b>KamalF</b></sub>
                 </a>
@@ -68,42 +68,42 @@ Here's a [detailed guide / walkthrough](https://elfhosted.com/guides/media/strea
 		<tr>
             <td align="center">
                 <a href="https://github.com/maspuce">
-                    <img src="https://avatars.githubusercontent.com/u/688714?v=4" width="100;" alt="maspuce"/>
+                    <img src="https://avatars.githubusercontent.com/u/688714?v=4" width="64;" alt="maspuce"/>
                     <br />
-                    <sub><b>Massimo Canonico</b></sub>
+                    <sub><b>maspuce</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/Murmiration">
-                    <img src="https://avatars.githubusercontent.com/u/26490372?v=4" width="100;" alt="Murmiration"/>
+                    <img src="https://avatars.githubusercontent.com/u/26490372?v=4" width="64;" alt="Murmiration"/>
                     <br />
                     <sub><b>Murmiration</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/codevski">
-                    <img src="https://avatars.githubusercontent.com/u/1435321?v=4" width="100;" alt="codevski"/>
+                    <img src="https://avatars.githubusercontent.com/u/1435321?v=4" width="64;" alt="codevski"/>
                     <br />
-                    <sub><b>Sash</b></sub>
+                    <sub><b>codevski</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/kana2001">
-                    <img src="https://avatars.githubusercontent.com/u/71416354?v=4" width="100;" alt="kana2001"/>
+                    <img src="https://avatars.githubusercontent.com/u/71416354?v=4" width="64;" alt="kana2001"/>
                     <br />
-                    <sub><b>Adi</b></sub>
+                    <sub><b>kana2001</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/mcorcoran">
-                    <img src="https://avatars.githubusercontent.com/u/1950615?v=4" width="100;" alt="mcorcoran"/>
+                    <img src="https://avatars.githubusercontent.com/u/1950615?v=4" width="64;" alt="mcorcoran"/>
                     <br />
                     <sub><b>mcorcoran</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/piratsch">
-                    <img src="https://avatars.githubusercontent.com/u/106690882?v=4" width="100;" alt="piratsch"/>
+                    <img src="https://avatars.githubusercontent.com/u/106690882?v=4" width="64;" alt="piratsch"/>
                     <br />
                     <sub><b>piratsch</b></sub>
                 </a>
