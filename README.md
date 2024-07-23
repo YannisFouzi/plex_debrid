@@ -6,7 +6,7 @@ This is an [ElfHosted](https://elfhosted.com) maintenance-and-features fork of t
 
 ## How does it work?
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/JTFoy0jQS4s?si=xdbb1sAkBx-_zmn3" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+Here's a [detailed guide / walkthrough](https://elfhosted.com/guides/media/stream-from-real-debrid-with-plex/)
 
 ## Improvements
 
