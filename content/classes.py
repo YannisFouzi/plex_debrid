@@ -926,17 +926,19 @@ class media:
                         retries = int(float(trigger[2]))
         if retries == 0:
             return
+
+        message = 'retrying download in ' + str(
+            round(int(ui_settings.loop_interval_seconds) / 60)) + 'min for item: ' + self.query() + ' - version/s [' + '],['.join(
+            names) + ']'
         if not self in media.ignore_queue:
             self.ignored_count = 1
             media.ignore_queue += [self]
-            ui_print('retrying download in 30min for item: ' + self.query() + ' - version/s [' + '],['.join(
-                names) + '] - attempt ' + str(self.ignored_count) + '/' + str(retries))
+            ui_print(message + ' - attempt ' + str(self.ignored_count) + '/' + str(retries))
         else:
             match = next((x for x in media.ignore_queue if self == x), None)
             if match.ignored_count < retries:
                 match.ignored_count += 1
-                ui_print('retrying download in 30min for item: ' + self.query() + ' - version/s [' + '],['.join(
-                    names) + '] - attempt ' + str(match.ignored_count) + '/' + str(retries))
+                ui_print(message + ' - attempt ' + str(match.ignored_count) + '/' + str(retries))
             else:
                 media.ignore_queue.remove(match)
                 ignore.add(self)

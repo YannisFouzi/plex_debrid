@@ -413,6 +413,7 @@ settings_list = [
         setting('Show Menu on Startup', 'Please enter "true" or "false": ', ui_settings, 'run_directly'),
         setting('Debug printing', 'Please enter "true" or "false": ', ui_settings, 'debug'),
         setting('Log to file', 'Please enter "true" or "false": ', ui_settings, 'log'),
+        setting('Watchlist loop interval (sec)', 'Please enter an integer value in seconds: ', ui_settings, 'loop_interval_seconds'),
         setting('version', 'No snooping around! :D This is for compatability reasons.', ui_settings, 'version',
                 hidden=True),
     ]
