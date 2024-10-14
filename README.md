@@ -37,17 +37,17 @@ Here's a [detailed guide / walkthrough](https://elfhosted.com/guides/media/strea
                 </a>
             </td>
             <td align="center">
-                <a href="https://github.com/themegaphoenix">
-                    <img src="https://avatars.githubusercontent.com/u/9766462?v=4" width="64;" alt="themegaphoenix"/>
-                    <br />
-                    <sub><b>themegaphoenix</b></sub>
-                </a>
-            </td>
-            <td align="center">
                 <a href="https://github.com/sirstudly">
                     <img src="https://avatars.githubusercontent.com/u/12377354?v=4" width="64;" alt="sirstudly"/>
                     <br />
                     <sub><b>sirstudly</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/themegaphoenix">
+                    <img src="https://avatars.githubusercontent.com/u/9766462?v=4" width="64;" alt="themegaphoenix"/>
+                    <br />
+                    <sub><b>themegaphoenix</b></sub>
                 </a>
             </td>
             <td align="center">
