@@ -1166,10 +1166,13 @@ class media:
         refresh_ = False
         i = 0
         self.Releases = []
-        if self.type in ["movie", "show"] and ((not hasattr(self, "title") or self.title == "" or self.title == None) or (not hasattr(self, "year") or self.year == None or self.year == "")):
-            ui_print(
-                "error: media item has no title or release year. This unknown movie/show might not be released yet.")
-            return
+        if self.type in ["movie", "show"]:
+            if not hasattr(self, "title") or self.title == "" or self.title is None:
+                ui_print("error: media item has no title. This unknown movie/show might not be released yet.")
+                return
+            elif not hasattr(self, "year") or self.year == "" or self.year is None:
+                ui_print(f"error: media item {self.title} has no release year. This movie/show might not be released yet.")
+                return
         scraper.services.overwrite = []
         EIDS = []
         imdbID = "."
