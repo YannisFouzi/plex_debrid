@@ -142,7 +142,11 @@ def check(element, force=False):
     for release in element.Releases[:]:
         release.wanted_patterns = wanted_patterns
         release.unwanted_patterns = unwanted_patterns
-        release.maybe_cached += ['AD']  # we won't know if it's cached until we attempt to download it
+        # FIX: Initialiser maybe_cached correctement
+        if not hasattr(release, 'maybe_cached'):
+            release.maybe_cached = []
+        if 'AD' not in release.maybe_cached:
+            release.maybe_cached.append('AD')
 
 
 def get_all_links_from_files(files):

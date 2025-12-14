@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m black:*)",
+      "Bash(if not exist .vscode mkdir .vscode)",
+      "Bash(cmd /c \"if not exist .vscode mkdir .vscode\")",
+      "Bash(cat:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(python:*)",
+      "Bash(\"C:/PlexAutomation/plex_debrid_mehdi/EPISODE_DETECTION_ANALYSIS.txt\")",
+      "Bash(metadata_search_output.txt)",
+      "Bash(episodes_output.txt)",
+      "Bash(timeout /t 3)",
+      "Bash(nul)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(copy \"C:\\PlexAutomation\\plex_debrid_mehdi\\content\\services\\plex.py\" \"C:\\PlexAutomation\\plex_debrid_mehdi\\content\\services\\plex.py.backup_20251213_opus\")",
+      "Bash(cmd /c copy:*)",
+      "Bash(ls:*)",
+      "Bash(cmd /c \"dir *.py | findstr settings\")",
+      "WebSearch",
+      "WebFetch(domain:rivenmedia.github.io)",
+      "WebFetch(domain:riven.tv)",
+      "Bash(copy \"C:\\PlexAutomation\\plex_debrid_mehdi\\content\\classes.py\" \"C:\\PlexAutomation\\plex_debrid_mehdi\\content\\classes.py.backup_20251213_opus\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
