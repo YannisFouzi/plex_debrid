@@ -3,6 +3,62 @@ from base import *
 #import parent modules
 from content import classes
 from ui.ui_print import *
+import json
+import os
+
+# Episode override functions
+def load_episode_overrides():
+    """
+    Charge le fichier episode_overrides.json.
+
+    Returns:
+        dict: Dictionnaire des overrides, ou {} si erreur
+    """
+    override_file = os.path.join(os.path.dirname(__file__), '..', '..', 'episode_overrides.json')
+
+    try:
+        if os.path.exists(override_file):
+            with open(override_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            ui_print(f"[INFO] Fichier episode_overrides.json non trouvé, création...")
+            # Créer un fichier vide
+            with open(override_file, 'w', encoding='utf-8') as f:
+                json.dump({}, f, indent=4)
+            return {}
+    except Exception as e:
+        ui_print(f"[ERROR] Impossible de charger episode_overrides.json : {e}")
+        return {}
+
+def create_fake_episode(season_obj, episode_number):
+    """
+    Crée un objet épisode factice pour forcer le téléchargement.
+
+    Args:
+        season_obj: Objet season parent
+        episode_number (int): Numéro d'épisode
+
+    Returns:
+        episode: Objet épisode
+    """
+    # Créer un objet avec les attributs minimaux requis
+    fake_data = type('FakeEpisode', (object,), {
+        'index': episode_number,
+        'parentIndex': season_obj.index,
+        'grandparentYear': season_obj.parentYear,
+        'grandparentTitle': getattr(season_obj, 'parentTitle', 'Unknown'),
+        'parentTitle': season_obj.title,
+        'title': f"Episode {episode_number}",
+        'type': 'episode',
+        'ratingKey': f"{season_obj.ratingKey}_E{episode_number:02d}",
+        'duration': 0,
+        'year': season_obj.parentYear,
+        'grandparentEID': season_obj.parentEID,
+        'parentEID': season_obj.EID,
+    })()
+
+    # Créer l'objet episode à partir des fake data
+    return episode(fake_data)
 
 name = 'Plex'
 session = custom_session(get_rate_limit=1.0, post_rate_limit=1.0)  # 1 second between requests = 60 requests/minute
@@ -196,6 +252,74 @@ class season(classes.media):
                             self.duration += episode_.duration if hasattr(episode_,"duration") else 0
                     self.leafCount = response.MediaContainer.totalSize
                     self.viewedLeafCount = viewCount
+
+                    # Episode Override Integration
+                    ui_print(f"[OVERRIDE DEBUG] Checking overrides for season...")
+                    ui_print(f"[OVERRIDE DEBUG] self.title = '{self.title}'")
+                    ui_print(f"[OVERRIDE DEBUG] self.parentTitle = '{self.parentTitle}'")
+                    ui_print(f"[OVERRIDE DEBUG] self.leafCount (from Plex) = {self.leafCount}")
+                    ui_print(f"[OVERRIDE DEBUG] len(self.Episodes) = {len(self.Episodes)}")
+                    ui_print(f"[OVERRIDE DEBUG] Episodes loaded: {[f'E{ep.index:02d}' for ep in self.Episodes] if self.Episodes else 'None'}")
+
+                    overrides = load_episode_overrides()
+
+                    # Normaliser le titre pour la recherche
+                    show_key = self.parentTitle.strip()
+                    ui_print(f"[OVERRIDE DEBUG] Looking for '{show_key}' in overrides...")
+
+                    if show_key in overrides:
+                        ui_print(f"[OVERRIDE DEBUG] Found '{show_key}' in overrides!")
+                        override_data = overrides[show_key]
+
+                        # Vérifier l'année (optionnel, pour éviter les homonymes)
+                        if override_data.get('year') == self.parentYear:
+                            ui_print(f"[OVERRIDE DEBUG] Year matches: {self.parentYear}")
+                            season_key = str(self.index)
+
+                            if season_key in override_data.get('seasons', {}):
+                                override_count = override_data['seasons'][season_key]['total_episodes']
+                                reason = override_data['seasons'][season_key].get('reason', 'Non spécifié')
+
+                                # Sauvegarder la valeur originale AVANT modification
+                                original_leafCount = self.leafCount
+                                original_episode_count = len(self.Episodes)
+
+                                ui_print(f"\n{'='*60}")
+                                ui_print(f"[OVERRIDE DÉTECTÉ] {show_key} S{self.index:02d}")
+                                ui_print(f"{'='*60}")
+                                ui_print(f"Plex Discover API retourne : {original_leafCount} épisodes")
+                                ui_print(f"Episodes actuellement chargés : {original_episode_count}")
+                                ui_print(f"Override Config demande : {override_count} épisodes")
+                                ui_print(f"Raison : {reason}")
+                                ui_print(f"{'='*60}")
+
+                                # Si override indique plus d'épisodes que chargés
+                                if override_count > len(self.Episodes):
+                                    episodes_to_create = override_count - len(self.Episodes)
+                                    ui_print(f"[RELOAD] Besoin de créer {episodes_to_create} épisodes manquants...")
+                                    ui_print(f"[RELOAD] Episodes actuels: {[f'E{ep.index:02d}' for ep in self.Episodes]}")
+
+                                    for ep_num in range(len(self.Episodes) + 1, override_count + 1):
+                                        ui_print(f"[RELOAD] Création épisode {ep_num}...")
+                                        fake_ep = create_fake_episode(self, ep_num)
+                                        self.Episodes.append(fake_ep)
+                                        ui_print(f"[RELOAD] Épisode {ep_num} créé et ajouté à self.Episodes")
+
+                                    ui_print(f"[RELOAD] Terminé! self.Episodes contient maintenant {len(self.Episodes)} épisodes")
+                                    ui_print(f"[RELOAD] Liste finale: {[f'E{ep.index:02d}' for ep in self.Episodes]}")
+                                else:
+                                    ui_print(f"[OVERRIDE] Pas besoin de créer d'épisodes ({len(self.Episodes)} >= {override_count})")
+
+                                # Mettre à jour leafCount
+                                self.leafCount = override_count
+                                ui_print(f"[OVERRIDE] leafCount mis à jour: {original_leafCount} -> {self.leafCount}")
+                                ui_print(f"{'='*60}\n")
+                            else:
+                                ui_print(f"[OVERRIDE DEBUG] Season {season_key} not found in override config")
+                        else:
+                            ui_print(f"[OVERRIDE DEBUG] Year mismatch: {self.parentYear} != {override_data.get('year')}")
+                    else:
+                        ui_print(f"[OVERRIDE DEBUG] '{show_key}' NOT found in overrides")
             else:
                 time.sleep(1)
 
@@ -524,6 +648,7 @@ class library(classes.library):
                 results = [None]
                 t = Thread(target=multi_init, args=(library.refresh.call, paths, results, 0))
                 t.start()
+                t.join()
             except:
                 ui_print("[plex] error: couldnt refresh libraries. Make sure you have setup a plex user!")
 

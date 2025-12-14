@@ -1,0 +1,32 @@
+{
+    "_comment": "Configuration des overrides d'épisodes pour les séries où Plex Discover API retourne un nombre incorrect",
+    "_format": {
+        "Titre de la Série": {
+            "year": 2025,
+            "seasons": {
+                "1": {
+                    "total_episodes": 8,
+                    "reason": "Description du problème"
+                }
+            }
+        }
+    },
+    "IT: Welcome to Derry": {
+        "year": 2025,
+        "seasons": {
+            "1": {
+                "total_episodes": 8,
+                "reason": "Plex Discover API retourne totalSize=1 au lieu de 8. Vérifié sur TMDB (ID: 200875) le 13/12/2025. 8 épisodes confirmés."
+            }
+        }
+    },
+    "Spartacus: House of Ashur": {
+        "year": 2025,
+        "seasons": {
+            "1": {
+                "total_episodes": 10,
+                "reason": "Plex Discover API semble retourner une valeur incorrecte. 10 épisodes prévus pour la saison 1."
+            }
+        }
+    }
+}
