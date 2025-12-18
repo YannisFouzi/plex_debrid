@@ -1,6 +1,11 @@
-from base import *
+﻿from base import *
 
 import releases
+# Subtitle trigger (optional)
+try:
+    import subtitle_runner
+except Exception:
+    subtitle_runner = None
 import debrid
 import scraper
 from ui.ui_print import *
@@ -2408,8 +2413,18 @@ class media:
                             downloaded += [True]
                             ver_dld = True
                             break
-                if not ver_dld:
-                    downloaded += [False]
+                # if a release was sent (cached or uncached), treat the version as successful and stop
+                if ver_dld:
+                    # Trigger subtitle download job (best-effort)
+                    if subtitle_runner:
+                        try:
+                            ui_print(f"[subs trigger] enqueue subs for '{self.query()}'", debug=ui_settings.debug)
+                            subtitle_runner.enqueue(self)
+                        except Exception as e:
+                            ui_print(f"[subs trigger] error: {e}", debug=ui_settings.debug)
+                    return True, False
+            if not ver_dld:
+                downloaded += [False]
         return True in downloaded, (False in downloaded or len(downloaded) == 0)
 
     def files(self):

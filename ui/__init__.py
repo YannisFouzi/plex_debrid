@@ -341,17 +341,26 @@ def preflight():
 def run(cdir = "", smode = False):
     global config_dir
     global service_mode
+    global stop
     config_dir = cdir
     service_mode = smode
     set_log_dir(config_dir)
-    if setup():
-        #uvicorn.run("webui:app", port=8008, reload=True)
-        options()
-    else:
-        load()
-        #uvicorn.run("webui:app", port=8008, reload=True)
-        download_script_run()
-        options()
+    try:
+        if setup():
+            #uvicorn.run("webui:app", port=8008, reload=True)
+            options()
+        else:
+            load()
+            #uvicorn.run("webui:app", port=8008, reload=True)
+            download_script_run()
+            options()
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt detected, shutting down gracefully.")
+        try:
+            stop = True  # signal background thread (if any) to stop
+        except NameError:
+            pass
+        return
 
 def update_available():
     try:
