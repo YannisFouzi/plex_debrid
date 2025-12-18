@@ -6,6 +6,15 @@ import releases
 import debrid
 from ui import ui_settings
 
+class subtitles:
+    media_root = "Z:\\"
+    script_path = "C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add.py"
+    plex_token = ""
+    plex_section = ""
+    ost_api_key = ""
+    ost_user = ""
+    ost_pass = ""
+
 class setting:
     def __init__(self, name, prompt, cls, key, required=False, entry="", test=None, help="", hidden=False,
                     subclass=False, oauth=False, moveable=True, preflight=False, radio=False, special=False):
@@ -396,6 +405,16 @@ settings_list = [
         setting('Comet Rate Limit', 'Please enter the minimum number of seconds between requests: ', scraper.services.comet, 'rate_limit_sec', hidden=True),
         setting('Comet Scraper Parameters', 'Please enter a valid Comet manifest URL: ', scraper.services.comet, 'manifest_json_url', entry="parameter",
                 help='This setting lets you control the comet scraping parameters. Visit "https://comet.elfhosted.com/configure" and configure your settings. Click on "Copy Link" and paste it here.', hidden=True),
+            ]
+        ],
+    ['Subtitles', [
+        setting('Subs media root', 'Please enter the media root path (e.g. Z:\\\\): ', subtitles, 'media_root', hidden=True),
+        setting('Subs script path', 'Please enter the full path to plex_subs_on_add.py: ', subtitles, 'script_path', hidden=True),
+        setting('Subs Plex token', 'Please enter your Plex token for subtitles: ', subtitles, 'plex_token', hidden=True),
+        setting('Subs Plex section', 'Please enter the Plex section number: ', subtitles, 'plex_section', hidden=True),
+        setting('Subs OpenSubtitles API key', 'Please enter your OpenSubtitles API key: ', subtitles, 'ost_api_key', hidden=True),
+        setting('Subs OpenSubtitles user', 'Please enter your OpenSubtitles username: ', subtitles, 'ost_user', hidden=True),
+        setting('Subs OpenSubtitles pass', 'Please enter your OpenSubtitles password: ', subtitles, 'ost_pass', hidden=True),
             ]
         ],
     ['Debrid Services', [
