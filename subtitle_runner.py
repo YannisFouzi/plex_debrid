@@ -8,7 +8,7 @@ from ui.ui_print import ui_print, ui_settings
 
 # Hardcoded subtitle settings (bypass settings UI)
 MEDIA_ROOT = r"Z:\\"  # Chemin réel où AllDebrid place les fichiers
-SCRIPT_PATH = r"C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add.py"
+SCRIPT_PATH = r"C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add_optimized.py"
 PLEX_TOKEN = "V3f8y4xzv2VEo6xzcSXu"
 PLEX_SECTION = "1"
 OST_API = "1uRReegXFmxneboaeeTnaySPzAhfK5hn"
