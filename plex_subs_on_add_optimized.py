@@ -1,5 +1,8 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# EARLY LOG: Script started
+print("[EARLY] Script python started, importing modules...", flush=True)
 
 import argparse
 import json
@@ -15,7 +18,10 @@ import datetime
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 
+print("[EARLY] Basic imports done, importing requests...", flush=True)
 import requests
+
+print("[EARLY] All imports done, configuring stdout...", flush=True)
 
 # Ensure stdout/stderr can emit UTF-8 safely on Windows consoles to avoid encode crashes
 if hasattr(sys.stdout, "reconfigure"):
@@ -23,13 +29,23 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+print("[EARLY] Stdout configured, defining log function...", flush=True)
+
 # ---- Utils logs ----
 def log(msg: str) -> None:
     now = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] {msg}", flush=True)
 
+print("[EARLY] Log function ready", flush=True)
+
 # ---- Video discovery (recursive) ----
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".ts"}
+TIER1_MAX_ATTEMPTS = 3
+ENABLE_TIER2 = False
+ENABLE_TIER3 = False
+RETRY_INTERVAL_S = 15
+RETRY_MAX_S = 60
+EP_TAG_RE = re.compile(r"(S\d{1,2}E\d{1,2}|\d{1,2}x\d{1,2})", re.IGNORECASE)
 
 def find_video_files_recursive(root: str) -> list[str]:
     out = []
@@ -42,9 +58,22 @@ def find_video_files_recursive(root: str) -> list[str]:
 
 def pick_largest(paths: list[str]) -> str:
     if not paths:
-        raise RuntimeError("Aucun fichier vidéo trouvé.")
+        raise RuntimeError("Aucun fichier vid├®o trouv├®.")
     paths = sorted(paths, key=lambda p: os.path.getsize(p), reverse=True)
     return paths[0]
+
+def looks_like_episode(path: str) -> bool:
+    return bool(EP_TAG_RE.search(os.path.basename(path)))
+
+def is_retryable_plex_miss(err: Exception) -> bool:
+    msg = str(err).lower()
+    if "item not found" in msg:
+        return True
+    if "tier-3" in msg and "timeout" in msg:
+        return True
+    if "not found after" in msg and "tier" in msg:
+        return True
+    return False
 
 # ---- ffprobe check: does MKV contain embedded FR subtitles? ----
 FR_LANGS = {"fr", "fra", "fre", "french"}
@@ -66,7 +95,7 @@ def has_embedded_french_subtitle(ffprobe_bin: str, video_path: str) -> bool:
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except FileNotFoundError:
-        raise RuntimeError("ffprobe introuvable. Vérifie ton PATH ou passe --ffprobe.")
+        raise RuntimeError("ffprobe introuvable. V├®rifie ton PATH ou passe --ffprobe.")
     if p.returncode != 0:
         log(f"FFPROBE <- rc={p.returncode}")
         log(f"FFPROBE stderr: {p.stderr.strip()}")
@@ -84,10 +113,10 @@ def has_embedded_french_subtitle(ffprobe_bin: str, video_path: str) -> bool:
         lang = (tags.get("language") or tags.get("LANGUAGE") or "").strip().lower()
         if lang in FR_LANGS:
             codec = s.get("codec_name", "?")
-            log(f"FFPROBE: sous-titre FR trouvé dans le MKV (lang={lang}, codec={codec}).")
+            log(f"FFPROBE: sous-titre FR trouv├® dans le MKV (lang={lang}, codec={codec}).")
             return True
 
-    log("FFPROBE: aucun sous-titre FR intégré détecté dans le MKV.")
+    log("FFPROBE: aucun sous-titre FR int├®gr├® d├®tect├® dans le MKV.")
     return False
 
 # ---- Plex helpers ----
@@ -141,16 +170,16 @@ def extract_title_from_filepath(filepath: str) -> str:
     return name
 
 def find_item_tier1_recently_added(baseurl: str, token: str, section: int, exact_file: str,
-                                   timeout_s: int = 30) -> tuple[str, str, str, str | None] | None:
+                                   timeout_s: int = 30, max_attempts: int = TIER1_MAX_ATTEMPTS) -> tuple[str, str, str, str | None, str | None, str | None, str | None] | None:
     """
     TIER 1: Check recently added items first (fastest).
-    Returns (ratingKey, plex_type, title, year_str_or_None) or None if not found.
+    Returns (ratingKey, plex_type, title, year_str_or_None, show_title, season_index, episode_index) or None if not found.
     """
     wanted = os.path.normpath(exact_file)
     deadline = time.time() + timeout_s
 
     attempt = 0
-    while time.time() < deadline:
+    while time.time() < deadline and attempt < max_attempts:
         attempt += 1
         log(f"[TIER-1] attempt #{attempt} -> checking /recentlyAdded (first 100 items)")
 
@@ -172,13 +201,16 @@ def find_item_tier1_recently_added(baseurl: str, token: str, section: int, exact
                 vtype = video.attrib.get("type", "unknown")
                 title = video.attrib.get("title", "")
                 year = video.attrib.get("year")
+                show_title = video.attrib.get("grandparentTitle")
+                season_index = video.attrib.get("parentIndex")
+                episode_index = video.attrib.get("index")
 
                 # Check file parts
                 for part in video.findall(".//Part"):
                     file_path = part.attrib.get("file", "")
                     if os.path.normpath(file_path) == wanted:
                         log(f"[TIER-1] FOUND in recently added (attempt #{attempt}): ratingKey={rating_key} title='{title}'")
-                        return rating_key, vtype, title, year
+                        return rating_key, vtype, title, year, show_title, season_index, episode_index
 
             log(f"[TIER-1] Not found in recently added items, retrying in 2s...")
 
@@ -189,14 +221,14 @@ def find_item_tier1_recently_added(baseurl: str, token: str, section: int, exact
 
         time.sleep(2)
 
-    log(f"[TIER-1] Not found after {attempt} attempts (timeout: {timeout_s}s)")
+    log(f"[TIER-1] Not found after {attempt} attempts (max {max_attempts}, timeout: {timeout_s}s)")
     return None
 
 def find_item_tier2_search(baseurl: str, token: str, section: int, exact_file: str,
-                           timeout_s: int = 20) -> tuple[str, str, str, str | None] | None:
+                           timeout_s: int = 20) -> tuple[str, str, str, str | None, str | None, str | None, str | None] | None:
     """
     TIER 2: Search by extracted title (medium speed).
-    Returns (ratingKey, plex_type, title, year_str_or_None) or None if not found.
+    Returns (ratingKey, plex_type, title, year_str_or_None, show_title, season_index, episode_index) or None if not found.
     """
     wanted = os.path.normpath(exact_file)
 
@@ -233,13 +265,16 @@ def find_item_tier2_search(baseurl: str, token: str, section: int, exact_file: s
                 vtype = video.attrib.get("type", "unknown")
                 title = video.attrib.get("title", "")
                 year = video.attrib.get("year")
+                show_title = video.attrib.get("grandparentTitle")
+                season_index = video.attrib.get("parentIndex")
+                episode_index = video.attrib.get("index")
 
                 # Check file parts
                 for part in video.findall(".//Part"):
                     file_path = part.attrib.get("file", "")
                     if os.path.normpath(file_path) == wanted:
                         log(f"[TIER-2] FOUND via search (query='{search_query}'): ratingKey={rating_key} title='{title}'")
-                        return rating_key, vtype, title, year
+                        return rating_key, vtype, title, year, show_title, season_index, episode_index
 
             log(f"[TIER-2] Not found in search results for '{search_query}', retrying in 3s...")
 
@@ -254,10 +289,10 @@ def find_item_tier2_search(baseurl: str, token: str, section: int, exact_file: s
     return None
 
 def find_item_tier3_full_scan(baseurl: str, token: str, section: int, exact_file: str,
-                              page_size: int = 500, max_pages: int = 10, timeout_s: int = 60) -> tuple[str, str, str, str | None]:
+                              page_size: int = 500, max_pages: int = 10, timeout_s: int = 60) -> tuple[str, str, str, str | None, str | None, str | None, str | None]:
     """
     TIER 3: Full library scan (slowest but most thorough).
-    Returns (ratingKey, plex_type, title, year_str_or_None).
+    Returns (ratingKey, plex_type, title, year_str_or_None, show_title, season_index, episode_index).
     """
     wanted = os.path.normpath(exact_file)
     deadline = time.time() + timeout_s
@@ -298,13 +333,16 @@ def find_item_tier3_full_scan(baseurl: str, token: str, section: int, exact_file
                     vtype = video.attrib.get("type", "unknown")
                     title = video.attrib.get("title", "")
                     year = video.attrib.get("year")
+                    show_title = video.attrib.get("grandparentTitle")
+                    season_index = video.attrib.get("parentIndex")
+                    episode_index = video.attrib.get("index")
 
                     # Check file parts
                     for part in video.findall(".//Part"):
                         file_path = part.attrib.get("file", "")
                         if os.path.normpath(file_path) == wanted:
                             log(f"[TIER-3] FOUND via full scan: ratingKey={rating_key} title='{title}'")
-                            return rating_key, vtype, title, year
+                            return rating_key, vtype, title, year, show_title, season_index, episode_index
 
             except ET.ParseError as e:
                 log(f"[TIER-3] XML parse error on page {page + 1}: {e}")
@@ -318,32 +356,45 @@ def find_item_tier3_full_scan(baseurl: str, token: str, section: int, exact_file
 
     raise RuntimeError(f"[TIER-3] Timeout: Item not found after {attempt} full scan attempts")
 
-def find_item_by_exact_file_optimized(baseurl: str, token: str, section: int, exact_file: str) -> tuple[str, str, str, str | None]:
+def find_item_by_exact_file_optimized(baseurl: str, token: str, section: int, exact_file: str) -> tuple[str, str, str, str | None, str | None, str | None, str | None]:
     """
     Optimized multi-tier approach to find a Plex item by exact file path.
     Tries progressively slower but more thorough methods.
-    Returns (ratingKey, plex_type, title, year_str_or_None).
+    Returns (ratingKey, plex_type, title, year_str_or_None, show_title, season_index, episode_index).
     """
-    log(f"Starting optimized search for file: {exact_file}")
+    log(f"SEARCH: Starting optimized search for file: {exact_file}")
 
     # TIER 1: Check recently added items (fastest, 95% hit rate)
     log("[TIER-1] Starting: Recently Added scan")
-    result = find_item_tier1_recently_added(baseurl, token, section, exact_file, timeout_s=30)
+    result = find_item_tier1_recently_added(
+        baseurl, token, section, exact_file,
+        timeout_s=30, max_attempts=TIER1_MAX_ATTEMPTS
+    )
     if result:
         log(f"[SUCCESS] Found via TIER-1 in < 30s")
         return result
+    log("[TIER-1] Not found")
 
-    # TIER 2: Search by title extracted from filename (fast, 4% hit rate)
-    log("[TIER-2] Starting: Search by extracted title")
-    result = find_item_tier2_search(baseurl, token, section, exact_file, timeout_s=20)
-    if result:
-        log(f"[SUCCESS] Found via TIER-2 in < 20s")
+    if ENABLE_TIER2:
+        # TIER 2: Search by title extracted from filename (fast, 4% hit rate)
+        log("[TIER-2] Starting: Search by extracted title")
+        result = find_item_tier2_search(baseurl, token, section, exact_file, timeout_s=20)
+        if result:
+            log(f"[SUCCESS] Found via TIER-2 in < 20s")
+            return result
+        log("[TIER-2] Not found, moving to TIER-3")
+    else:
+        log("[TIER-2] Skipped (disabled)")
+
+    if ENABLE_TIER3:
+        # TIER 3: Full library scan (slow but thorough, 1% hit rate)
+        log("[TIER-3] Starting: Full library scan (fallback)")
+        result = find_item_tier3_full_scan(baseurl, token, section, exact_file,
+                                         page_size=500, max_pages=10, timeout_s=60)
+        log("[TIER-3] Completed")
         return result
-
-    # TIER 3: Full library scan (slow but thorough, 1% hit rate)
-    log("[TIER-3] Starting: Full library scan (fallback)")
-    return find_item_tier3_full_scan(baseurl, token, section, exact_file,
-                                     page_size=500, max_pages=10, timeout_s=60)
+    log("[TIER-3] Skipped (disabled)")
+    raise RuntimeError("[TIER-1] Item not found in recently added; TIER-2/3 disabled")
 
 # ---- OpenSubtitles.com API (direct HTTP) ----
 API_BASE = "https://api.opensubtitles.com/api/v1"
@@ -363,7 +414,7 @@ def ost_login(api_key: str, user_agent: str, username: str, password: str, max_t
     url = f"{API_BASE}/login"
     payload = {"username": username, "password": password}
     for i in range(1, max_tries + 1):
-        log(f"OST login try {i}/{max_tries} …")
+        log(f"OST login try {i}/{max_tries} ÔÇª")
         r = requests.post(url, headers=ost_headers(api_key, user_agent), json=payload, timeout=30)
         if r.status_code == 429:
             # rate-limit 1 req/sec -> backoff simple
@@ -428,7 +479,7 @@ def ost_pick_best(candidates: list[dict]) -> dict:
             continue
         log(f"OST candidate #{idx}: accepted")
         return c
-    raise RuntimeError("Aucun sous-titre satisfaisant trouvé (non-AI + file_id présent).")
+    raise RuntimeError("Aucun sous-titre satisfaisant trouv├® (non-AI + file_id pr├®sent).")
 
 def ost_download(api_key: str, user_agent: str, bearer: str, file_id: int) -> tuple[bytes, str | None]:
     url = f"{API_BASE}/download"
@@ -445,7 +496,7 @@ def ost_download(api_key: str, user_agent: str, bearer: str, file_id: int) -> tu
     fname = meta.get("file_name") or meta.get("filename")
 
     if not link:
-        raise RuntimeError(f"OpenSubtitles download: pas de lien dans la réponse: {meta}")
+        raise RuntimeError(f"OpenSubtitles download: pas de lien dans la r├®ponse: {meta}")
 
     log(f"OST download -> GET {link}")
     r2 = requests.get(link, timeout=60)
@@ -480,8 +531,11 @@ def bytes_to_srt_text(blob: bytes) -> str:
 
 # ---- Plex upload (using plexapi) ----
 def plex_upload_external_subtitle(baseurl: str, token: str, rating_key: str, srt_path: str) -> None:
+    log(f"UPLOAD: Importing plexapi.server...")
     from plexapi.server import PlexServer  # imported here so script can still run parts without plexapi
+    log(f"UPLOAD: plexapi imported, connecting to PlexServer...")
     plex = PlexServer(baseurl, token)
+    log(f"UPLOAD: Connected, fetching item with ratingKey={rating_key}...")
     item = plex.fetchItem(int(rating_key))
     log(f"UPLOAD -> Plex uploadSubtitles('{srt_path}')")
     item.uploadSubtitles(srt_path)
@@ -504,12 +558,42 @@ def build_query_from_plex_title(title: str, year: str | None) -> str:
         return f"{t} {year}"
     return t
 
+def format_sxxexx(season_index: str | None, episode_index: str | None) -> str | None:
+    try:
+        season_num = int(season_index)
+        episode_num = int(episode_index)
+    except (TypeError, ValueError):
+        return None
+    return f"S{season_num:02d}E{episode_num:02d}"
+
+def build_query_for_episode(show_title: str | None, season_index: str | None, episode_index: str | None) -> str | None:
+    if not show_title:
+        return None
+    tag = format_sxxexx(season_index, episode_index)
+    if not tag:
+        return None
+    t = show_title.strip()
+    t = re.sub(r"\s+", " ", t)
+    return f"{t} {tag}"
+
+def filter_candidates_by_tag(candidates: list[dict], tag: str | None) -> list[dict]:
+    if not tag:
+        return candidates
+    tag_lc = tag.lower()
+    out = []
+    for c in candidates:
+        attrs = c.get("attributes", {}) or {}
+        release = (attrs.get("release") or "").lower()
+        if tag_lc in release:
+            out.append(c)
+    return out
+
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseurl", default="http://127.0.0.1:32400")
     ap.add_argument("--token", required=True)
     ap.add_argument("--section", type=int, required=True)
-    ap.add_argument("--path", required=True, help="Dossier du média (ex: Z:\\Film\\MonFilm)")
+    ap.add_argument("--path", required=True, help="Dossier du m├®dia (ex: Z:\\Film\\MonFilm)")
     ap.add_argument("--outdir", default=r"C:\PlexAutomation\PlexSubtitles")
     ap.add_argument("--lang", default="fr")
 
@@ -525,78 +609,189 @@ def parse_args():
     return ap.parse_args()
 
 def main():
+    log("MAIN: Parsing arguments...")
     args = parse_args()
+    log("MAIN: Arguments parsed")
 
+    log(f"MAIN: Sanitizing folder path: {args.path}")
     folder = sanitize_folder_path(args.path)
+    log(f"MAIN: Folder sanitized: {folder}")
+
+    log(f"MAIN: Creating output directory: {args.outdir}")
     os.makedirs(args.outdir, exist_ok=True)
+    log("MAIN: Output directory ready")
 
     log("START")
     log(f"Args: baseurl={args.baseurl} section={args.section} path='{folder}' outdir='{args.outdir}'")
 
-    # 1) Find mkv/video (recursive), pick largest
-    vids = find_video_files_recursive(folder)
-    log(f"DIR: video files found = {len(vids)}")
-    for v in vids[:10]:
+    # 1) Find mkv/video (recursive), process all videos (episodes or movie)
+    log("MAIN: Starting video file search (recursive)...")
+    video_paths = find_video_files_recursive(folder)
+    log(f"MAIN: Video search completed, found {len(video_paths) if video_paths else 0} files")
+
+    if not video_paths:
+        raise RuntimeError("Aucun fichier video trouve.")
+    video_paths = sorted(video_paths)
+    primary = pick_largest(video_paths)
+    video_paths = [primary] + [p for p in video_paths if p != primary]
+    log(f"MAIN: Prioritizing largest video file first: {primary}")
+    log(f"DIR: video files found = {len(video_paths)}")
+    for v in video_paths[:10]:
         log(f"DIR: video -> {v}")
-    if len(vids) > 10:
-        log("DIR: (… liste tronquée …)")
-    video_path = pick_largest(vids)
-    log(f"DIR: selected (largest) = '{video_path}'")
+    if len(video_paths) > 10:
+        log("DIR: (liste tronquee)")
 
     # 2) Ask Plex to scan the folder (targeted)
+    log("MAIN: Requesting Plex refresh...")
     plex_refresh_section_path(args.baseurl, args.token, args.section, folder)
+    log("MAIN: Plex refresh request completed")
 
-    # 3) Wait/find Plex item using OPTIMIZED multi-tier approach
-    rating_key, plex_type, plex_title, plex_year = find_item_by_exact_file_optimized(
-        args.baseurl, args.token, args.section,
-        exact_file=video_path
-    )
-    log(f"Plex item: type={plex_type} ratingKey={rating_key} title='{plex_title}' year={plex_year}")
-
-    # 4) Check embedded FR subtitles in MKV (your requirement)
-    if has_embedded_french_subtitle(args.ffprobe, video_path):
-        log("SKIP: le MKV contient déjà un sous-titre FR intégré -> pas de téléchargement OpenSubtitles.")
-        log("END -> OK (already has embedded FR)")
-        return 0
-
-    # 5) Download FR from OpenSubtitles.com
+    # 3) Login OpenSubtitles once
+    log("MAIN: Checking OpenSubtitles credentials...")
     if not args.ost_api_key or not args.ost_user or not args.ost_pass:
         raise RuntimeError("OpenSubtitles: il manque --ost-api-key/--ost-user/--ost-pass (ou variables OST_API_KEY/OST_USER/OST_PASS).")
-
+    log("MAIN: Logging into OpenSubtitles...")
     bearer = ost_login(args.ost_api_key, args.ost_useragent, args.ost_user, args.ost_pass)
+    log("MAIN: OpenSubtitles login successful")
 
-    query = build_query_from_plex_title(plex_title, plex_year)
-    log(f"OST search movie: query='{query}' lang={args.lang}")
+    success = 0
+    failures = []
+    missing = []
+    retry_enabled = any(looks_like_episode(p) for p in video_paths)
+    if retry_enabled:
+        log(f"RETRY: enabled interval={RETRY_INTERVAL_S}s max={RETRY_MAX_S}s")
 
-    results = ost_search_movie(args.ost_api_key, args.ost_useragent, bearer, query=query, year=plex_year, lang=args.lang)
-    if not results:
-        raise RuntimeError("OpenSubtitles: 0 résultat pour cette recherche.")
+    def process_video(video_path: str, idx: int, total: int, phase: str) -> tuple[str, str | None]:
+        prefix = "MAIN" if phase == "MAIN" else f"RETRY-{phase}"
+        log(f"{prefix}: [{idx}/{total}] Processing video file...")
+        log(f"PROCESS -> {video_path}")
+        try:
+            log(f"{prefix}: [{idx}/{total}] Starting Plex item search...")
+            rating_key, plex_type, plex_title, plex_year, show_title, season_index, episode_index = find_item_by_exact_file_optimized(
+                args.baseurl, args.token, args.section,
+                exact_file=video_path
+            )
+            log(f"{prefix}: [{idx}/{total}] Plex item found")
+            log(f"Plex item: type={plex_type} ratingKey={rating_key} title='{plex_title}' year={plex_year}")
+        except Exception as e:
+            log(f"ERROR on {video_path}: {e}")
+            if retry_enabled and looks_like_episode(video_path) and is_retryable_plex_miss(e):
+                log(f"{prefix}: [{idx}/{total}] DEFERRED - Plex item missing, will retry")
+                return "missing", str(e)
+            log(f"{prefix}: [{idx}/{total}] FAILED - Continuing to next video")
+            return "failed", str(e)
 
-    best = ost_pick_best(results)
-    file_id = extract_file_id(best)
-    if file_id is None:
-        raise RuntimeError("OpenSubtitles: candidate choisi mais file_id introuvable (unexpected).")
+        try:
+            # Skip if embedded FR
+            log(f"{prefix}: [{idx}/{total}] Checking for embedded French subtitles...")
+            if has_embedded_french_subtitle(args.ffprobe, video_path):
+                log("SKIP: sous-titre FR deja present -> pas de telechargement.")
+                return "success", None
 
-    blob, remote_name = ost_download(args.ost_api_key, args.ost_useragent, bearer, file_id=file_id)
-    srt_text = bytes_to_srt_text(blob)
-    if len(srt_text.strip()) < 50:
-        raise RuntimeError("OpenSubtitles: contenu SRT trop court (probablement mauvais fichier).")
+            log(f"{prefix}: [{idx}/{total}] No embedded FR subtitles, searching OpenSubtitles...")
+            if plex_type == "episode":
+                query = build_query_for_episode(show_title, season_index, episode_index)
+                if not query:
+                    raise RuntimeError("OpenSubtitles: impossible de construire la requete episode (serie/saison/episode manquants).")
+                tag = format_sxxexx(season_index, episode_index)
+                log(f"OST search: query='{query}' lang={args.lang}")
+                results = ost_search_movie(args.ost_api_key, args.ost_useragent, bearer, query=query, year=None, lang=args.lang)
+                results = filter_candidates_by_tag(results, tag)
+                if results:
+                    log(f"{prefix}: [{idx}/{total}] {len(results)} candidate(s) after SxxEyy filter")
+            else:
+                query = build_query_from_plex_title(plex_title, plex_year)
+                log(f"OST search: query='{query}' lang={args.lang}")
+                results = ost_search_movie(args.ost_api_key, args.ost_useragent, bearer, query=query, year=plex_year, lang=args.lang)
+            if not results:
+                raise RuntimeError("OpenSubtitles: 0 resultat pour cette recherche.")
 
-    # Write
-    srt_path = os.path.join(args.outdir, f"plex_{rating_key}.{args.lang}.srt")
-    with open(srt_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(srt_text)
-    log(f"WROTE -> {srt_path} (remote='{remote_name}')")
+            log(f"{prefix}: [{idx}/{total}] Found {len(results)} subtitle(s), picking best...")
+            best = ost_pick_best(results)
+            file_id = extract_file_id(best)
+            if file_id is None:
+                raise RuntimeError("OpenSubtitles: candidate choisi mais file_id introuvable (unexpected).")
 
-    # 6) Upload into Plex as external subtitle
-    plex_upload_external_subtitle(args.baseurl, args.token, rating_key, srt_path)
+            log(f"{prefix}: [{idx}/{total}] Downloading subtitle file_id={file_id}...")
+            blob, remote_name = ost_download(args.ost_api_key, args.ost_useragent, bearer, file_id=file_id)
+            srt_text = bytes_to_srt_text(blob)
+            if len(srt_text.strip()) < 50:
+                raise RuntimeError("OpenSubtitles: contenu SRT trop court (probablement mauvais fichier).")
 
-    log("END -> OK")
+            srt_path = os.path.join(args.outdir, f"plex_{rating_key}.{args.lang}.srt")
+            with open(srt_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(srt_text)
+            log(f"WROTE -> {srt_path} (remote='{remote_name}')")
+
+            log(f"{prefix}: [{idx}/{total}] Uploading subtitle to Plex...")
+            plex_upload_external_subtitle(args.baseurl, args.token, rating_key, srt_path)
+            log("UPLOAD OK")
+            log(f"{prefix}: [{idx}/{total}] SUCCESS - Video completed")
+            return "success", None
+        except Exception as e:
+            log(f"ERROR on {video_path}: {e}")
+            log(f"{prefix}: [{idx}/{total}] FAILED - Continuing to next video")
+            return "failed", str(e)
+
+    # 4) Process each video file
+    log(f"MAIN: Starting processing loop for {len(video_paths)} video file(s)...")
+    for idx, video_path in enumerate(video_paths, 1):
+        status, err = process_video(video_path, idx, len(video_paths), "MAIN")
+        if status == "success":
+            success += 1
+        elif status == "missing":
+            missing.append(video_path)
+        else:
+            failures.append((video_path, err or "unknown error"))
+
+    if retry_enabled and missing:
+        retry_start = time.time()
+        pass_no = 0
+        while missing:
+            elapsed = time.time() - retry_start
+            remaining = RETRY_MAX_S - elapsed
+            if remaining <= 0:
+                break
+            pass_no += 1
+            sleep_s = min(RETRY_INTERVAL_S, remaining)
+            log(f"RETRY: waiting {int(sleep_s)}s before pass {pass_no} for {len(missing)} item(s)")
+            time.sleep(sleep_s)
+            log(f"RETRY-{pass_no}: starting pass for {len(missing)} item(s)")
+            new_missing = []
+            for idx, video_path in enumerate(missing, 1):
+                status, err = process_video(video_path, idx, len(missing), str(pass_no))
+                if status == "success":
+                    success += 1
+                elif status == "missing":
+                    new_missing.append(video_path)
+                else:
+                    failures.append((video_path, err or "unknown error"))
+            missing = new_missing
+
+        if missing:
+            log(f"RETRY: giving up on {len(missing)} item(s) after {int(time.time() - retry_start)}s")
+            for video_path in missing:
+                failures.append((video_path, "Plex item still not found after retries"))
+
+    if success == 0:
+        raise RuntimeError("Aucun sous-titre n'a pu etre ajoute.")
+    if failures:
+        log(f"Completed with {success} success, {len(failures)} failure(s).")
+    else:
+        log("END -> OK")
     return 0
-
 if __name__ == "__main__":
+    print("[EARLY] __main__ block reached, about to call main()...", flush=True)
     try:
-        raise SystemExit(main())
+        print("[EARLY] Calling main()...", flush=True)
+        exit_code = main()
+        print(f"[EARLY] main() returned {exit_code}, exiting...", flush=True)
+        raise SystemExit(exit_code)
     except KeyboardInterrupt:
         log("END -> interrupted")
+        raise
+    except Exception as e:
+        print(f"[EARLY] EXCEPTION in main: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         raise

@@ -345,6 +345,9 @@ settings_list = [
         setting('Overseerr API Key', 'Please specify your Overseerr API Key: ', content.services.overseerr, 'api_key', hidden=True),
         setting('Overseerr Base URL', 'Please specify your Overseerr base URL: ', content.services.overseerr, 'base_url',
                 hidden=True),
+        setting('TMDb API Key', 'Please specify your TMDb API Key: ', content.services.tmdb, 'api_key',
+                hidden=True,
+                help='Optional: used to determine whether a series has ended when Plex does not provide status fields.'),
     ]
         ],
     ['Library Services', [

@@ -399,5 +399,7 @@ FodyWeavers.xsd
 *.sln.iml
 settings.json
 settings_backup.json
-log.txt
-log2.txt
+log_film.txt
+log_serie.txt
+tmdb_status_cache.json
+backup.json
