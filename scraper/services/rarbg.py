@@ -4,7 +4,7 @@ from ui.ui_print import *
 import releases
 
 name = "rarbg"
-token = 'r05xvbq6ul'
+token = ''
 session = requests.Session()
 
 def setup(cls, new=False):
