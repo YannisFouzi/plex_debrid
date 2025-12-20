@@ -2376,7 +2376,7 @@ class media:
                                 if rule[0] == "bitrate":
                                     version.rules.remove(rule)
                             test_releases = copy.deepcopy(scraped_releases)
-                            releases.sort(test_releases, version, False)
+                            releases.sort(test_releases, version, False, element=episode)
                             ui_print(f"[EPISODE_RELEASES] Version {version.name}: {len(test_releases)} matching releases")
                             if len(test_releases) > 0:
                                 attempt_episodes = True
@@ -2653,7 +2653,7 @@ class media:
                 )
                 self.version = version
                 self.Releases = copy.deepcopy(scraped_releases)
-                releases.sort(self.Releases, self.version)
+                releases.sort(self.Releases, self.version, element=self)
                 if len(self.Releases) > 0:
                     releases.print_releases(self.Releases, True)
                 ver_dld = False

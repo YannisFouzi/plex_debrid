@@ -65,6 +65,7 @@ session = custom_session(get_rate_limit=1.0, post_rate_limit=1.0)  # 1 second be
 users = []
 headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 current_library = []
+WATCHLIST_PAGE_SIZE = 100
 
 def setup(cls, new=False):
     from content.services import setup
@@ -124,7 +125,7 @@ class watchlist(classes.watchlist):
                 total = 1
                 while added < total:
                     total = 0
-                    url = 'https://discover.provider.plex.tv/library/sections/watchlist/all?X-Plex-Container-Size=200&X-Plex-Container-Start=' + str(added) + '&X-Plex-Token=' + user[1]
+                    url = 'https://discover.provider.plex.tv/library/sections/watchlist/all?X-Plex-Container-Size=' + str(WATCHLIST_PAGE_SIZE) + '&X-Plex-Container-Start=' + str(added) + '&X-Plex-Token=' + user[1]
                     response = get(session, url)
                     if hasattr(response, 'MediaContainer'):
                         total = response.MediaContainer.totalSize
