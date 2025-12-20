@@ -1,5 +1,8 @@
 ﻿from base import *
 
+import os
+import re
+
 import releases
 # Subtitle trigger (optional)
 try:
@@ -294,6 +297,7 @@ class media:
 
     ignore_queue = []
     downloaded_versions = []
+    pack_in_progress = {}
 
     def __init__(self, other):
         self.__dict__.update(other.__dict__)
@@ -337,6 +341,18 @@ class media:
                 )
         except:
             return False
+
+    def pack_key(self):
+        if self.type != "season":
+            return None
+        if hasattr(self, "parentEID"):
+            try:
+                return ("season", tuple(sorted(self.parentEID)), self.index)
+            except Exception:
+                return ("season", tuple(self.parentEID), self.index)
+        if hasattr(self, "parentGuid"):
+            return ("season", self.parentGuid, self.index)
+        return ("season", self.parentTitle, self.index)
 
     def match(self, service):
         if not hasattr(self, "services"):
@@ -1693,12 +1709,138 @@ class media:
             return False
 
     def hasended(self):
-        if hasattr(self, "status"):
-            if self.status == "ended":
+        if hasattr(self, "_ended_cached"):
+            return self._ended_cached
+
+        def _parse_bool(value):
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return None
+            v = str(value).strip().lower()
+            if v in ("1", "true", "yes"):
                 return True
-        if hasattr(self, "isContinuingSeries"):
-            return not self.isContinuingSeries
-        return False
+            if v in ("0", "false", "no"):
+                return False
+            return None
+
+        ended = None
+        if hasattr(self, "status") and self.status is not None:
+            if str(self.status).strip().lower() == "ended":
+                ended = True
+                self.ended_source = "plex_status"
+        if ended is None and hasattr(self, "isContinuingSeries"):
+            is_cont = _parse_bool(self.isContinuingSeries)
+            if is_cont is not None:
+                ended = not is_cont
+                self.ended_source = "plex_isContinuingSeries"
+
+        if ended is None and getattr(self, "type", "") == "show":
+            try:
+                from content.services import tmdb as tmdb_service
+                tmdb_result = tmdb_service.get_show_status(self)
+                if tmdb_result:
+                    self.tmdb_status = tmdb_result.get("status")
+                    self.tmdb_id = tmdb_result.get("tmdb_id")
+                    self.tmdb_expected_episodes = tmdb_result.get("expected_episodes")
+                    self.tmdb_expected_episodes_source = tmdb_result.get(
+                        "expected_source"
+                    )
+                    self.ended_source = tmdb_result.get("source")
+                    ended = bool(tmdb_result.get("ended", False))
+            except Exception as e:
+                ui_print(f"[tmdb] error: {e}", ui_settings.debug)
+
+        if ended is None:
+            ended = False
+        self._ended_cached = ended
+        return ended
+
+    def _find_local_show(self, library):
+        if not library:
+            return None
+        if hasattr(self, "EID") and self.EID:
+            for item in library:
+                if item.type == "show" and hasattr(item, "EID"):
+                    for eid in self.EID:
+                        if eid in item.EID:
+                            return item
+        tmdb_id = getattr(self, "tmdb_id", None)
+        if tmdb_id:
+            tmdb_ids = {f"tmdb://{tmdb_id}", f"themoviedb://{tmdb_id}"}
+            for item in library:
+                if item.type == "show" and hasattr(item, "EID"):
+                    for eid in item.EID:
+                        if eid in tmdb_ids:
+                            return item
+        if hasattr(self, "guid"):
+            for item in library:
+                if item.type == "show" and getattr(item, "guid", None) == self.guid:
+                    return item
+        title = str(getattr(self, "title", "")).strip().lower()
+        year = getattr(self, "year", None)
+        if title:
+            matches = []
+            for item in library:
+                if item.type != "show":
+                    continue
+                if str(getattr(item, "title", "")).strip().lower() != title:
+                    continue
+                if year and hasattr(item, "year") and item.year not in (None, ""):
+                    if str(item.year) != str(year):
+                        continue
+                matches.append(item)
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
+    def _local_episode_count(self, local_show):
+        if not local_show or not hasattr(local_show, "Seasons"):
+            return None
+        count = 0
+        for season in local_show.Seasons:
+            index = getattr(season, "index", None)
+            try:
+                index = int(index)
+            except Exception:
+                index = None
+            if index == 0:
+                continue
+            if index is None:
+                title = str(getattr(season, "title", "")).lower()
+                if "special" in title:
+                    continue
+            season_count = getattr(season, "leafCount", None)
+            if season_count is None:
+                season_count = len(getattr(season, "Episodes", []))
+            try:
+                count += int(season_count)
+            except Exception:
+                continue
+        return count
+
+    def show_complete(self, library):
+        expected = getattr(self, "tmdb_expected_episodes", None)
+        expected_source = getattr(self, "tmdb_expected_episodes_source", None)
+        if expected is None:
+            try:
+                from content.services import tmdb as tmdb_service
+                tmdb_result = tmdb_service.get_show_status(self)
+                if tmdb_result:
+                    expected = tmdb_result.get("expected_episodes")
+                    expected_source = tmdb_result.get("expected_source")
+                    self.tmdb_expected_episodes = expected
+                    self.tmdb_expected_episodes_source = expected_source
+            except Exception as e:
+                ui_print(f"[tmdb] error: {e}", ui_settings.debug)
+        local_show = self._find_local_show(library)
+        local_count = self._local_episode_count(local_show)
+        complete = (
+            expected is not None
+            and local_count is not None
+            and local_count >= expected
+        )
+        return complete, local_count, expected, expected_source
 
     def download(self, retries=0, library=[], parentReleases=[]):
         global imdb_scraped
@@ -1989,20 +2131,112 @@ class media:
                         self.watchlist.autoremove == "both"
                         or self.watchlist.autoremove == "show"
                     ):
-                        self.watchlist.remove([], self)
+                        ended = self.hasended()
+                        ended_source = getattr(self, "ended_source", "unknown")
+                        if ended:
+                            (
+                                show_complete,
+                                local_count,
+                                expected_count,
+                                expected_source,
+                            ) = self.show_complete(library)
+                        else:
+                            show_complete = False
+                            local_count = None
+                            expected_count = None
+                            expected_source = None
+                        if ended and show_complete:
+                            self.watchlist.remove([], self)
+                        else:
+                            ui_print(
+                                f"[SHOW_AUTOREMOVE] skipped: ended={ended} source={ended_source} complete={show_complete} local={local_count} expected={expected_count} expected_source={expected_source}",
+                                ui_settings.debug,
+                            )
                     toc = time.perf_counter()
                     ui_print("took " + str(round(toc - tic, 2)) + "s")
         elif self.type == "season":
             ui_print(
                 f"processing: {self.parentTitle} {self.title}", debug=ui_settings.debug
             )
+
+            # If this season was already handled via a pack in this session, skip further work
+            if hasattr(self, "pack_downloaded") and self.pack_downloaded:
+                ui_print(
+                    "[SEASON_PACK] Season already marked as downloaded; skipping.",
+                    ui_settings.debug,
+                )
+                return False, False
+
             debrid_downloaded = False
             retryep = False
+            attempt_episodes = False
             for release in parentReleases:
                 if regex.match(self.deviation(), release.title, regex.I):
                     self.Releases += [release]
             # Set the episodes parent releases to be the seasons parent releases:
             scraped_releases = copy.deepcopy(parentReleases)
+
+            # If the season pack is already present locally (episodes have files in Plex or on disk),
+            # mark them as collected to avoid pointless re-download attempts.
+            try:
+                self.set_file_names()
+            except Exception as e:
+                ui_print(f"[EPISODE LOOP DEBUG] set_file_names failed: {e}", ui_settings.debug)
+
+            already_collected_eps = []
+            plex_collected_eps = []
+            season_key = self.pack_key()
+            for ep in self.Episodes:
+                # Match by Plex existing_releases (Plex is source of truth for "already present")
+                has_existing = bool(getattr(ep, "existing_releases", []))
+                if has_existing:
+                    plex_collected_eps.append(ep)
+
+                if has_existing:
+                    ep.skip_download = True
+                    ep.skip_scraping = True
+                    ep.already_collected = True
+                    # ensure a version exists for downstream steps (subtitle enqueue, etc.)
+                    ep_versions = ep.versions()
+                    if ep_versions:
+                        ep.version = ep_versions[0]
+                    already_collected_eps.append(ep)
+
+            if already_collected_eps:
+                ui_print(
+                    f"[EPISODE LOOP DEBUG] {len(already_collected_eps)} episode(s) already present in Plex; skipping debrid download for them",
+                    ui_settings.debug,
+                )
+            all_in_plex = self.Episodes and len(plex_collected_eps) == len(self.Episodes)
+            if all_in_plex and season_key and season_key in media.pack_in_progress:
+                del media.pack_in_progress[season_key]
+                ui_print(
+                    "[SEASON_IN_PROGRESS] Plex now has all episodes; clearing in-progress flag",
+                    ui_settings.debug,
+                )
+            if all_in_plex:
+                ui_print(
+                    f"[SEASON_SKIP] All {len(self.Episodes)} episode(s) already present in Plex; skipping season pack/scrape",
+                    ui_settings.debug,
+                )
+                self.pack_downloaded = True
+                for ep in self.Episodes:
+                    ep.skip_download = True
+                    ep.skip_scraping = True
+                return False, False
+            if season_key and season_key in media.pack_in_progress:
+                ui_print(
+                    "[SEASON_IN_PROGRESS] Pack already sent; waiting for Plex, skipping re-scrape",
+                    ui_settings.debug,
+                )
+                try:
+                    self.collect(refresh_=True)
+                except Exception as e:
+                    ui_print(
+                        f"[SEASON_IN_PROGRESS] collect() failed while waiting: {e}",
+                        ui_settings.debug,
+                    )
+                return True, True
             # If there is more than one episode
             if len(self.Episodes) > 2:
                 if self.season_pack(scraped_releases):
@@ -2153,6 +2387,26 @@ class media:
                             ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: No valid releases, skip_download=True")
                     else:
                         ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: No matches in scraped_releases")
+
+            # If a season pack was downloaded (or files are already present) and no per-episode attempt is needed,
+            # skip per-episode processing and stop retries for this season.
+            if (debrid_downloaded or getattr(self, "pack_downloaded", False) or already_collected_eps) and not attempt_episodes:
+                # mark season/episodes as already handled for next scheduler cycle
+                self.pack_downloaded = True
+                for ep in self.Episodes:
+                    ep.skip_download = True
+                    ep.skip_scraping = True
+                # trigger collection/refresh to help Plex see the new files
+                try:
+                    self.collect(refresh_=True)
+                except Exception as e:
+                    ui_print(f"[SEASON_PACK] collect() failed after pack download: {e}", ui_settings.debug)
+                ui_print(
+                    "[EPISODE LOOP DEBUG] Season pack already downloaded; skipping per-episode downloads and relying on pack subtitles",
+                    ui_settings.debug,
+                )
+                # Return with retry=False to avoid scheduler relaunch
+                return True, False
             # Check if all episodes were successfuly downloaded, download them or queue them to be ignored otherwise
             ui_print(f"[EPISODE LOOP DEBUG] Starting episode loop for {self.title}")
             ui_print(f"[EPISODE LOOP DEBUG] Total episodes in self.Episodes: {len(self.Episodes)}")
@@ -2192,7 +2446,19 @@ class media:
                             downloaded = False
                             retryep = False
                     else:
-                        ui_print(f"[EPISODE LOOP DEBUG] Skipping download due to skip_download attribute")
+                        if getattr(episode, "already_collected", False):
+                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download: episode already present locally")
+                            downloaded = True
+                            retryep = False
+                            # Trigger subtitle fetch even without a fresh download
+                            if subtitle_runner and hasattr(episode, "version"):
+                                try:
+                                    subtitle_runner.enqueue(episode)
+                                    ui_print(f"[subs trigger] enqueue subs for already-downloaded episode '{episode.query()}'", ui_settings.debug)
+                                except Exception as e:
+                                    ui_print(f"[subs trigger] error: {e}", ui_settings.debug)
+                        else:
+                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download due to skip_download attribute")
 
                     if downloaded:
                         ui_print(f"[EPISODE LOOP DEBUG] Episode downloaded successfully, setting refresh_=True")
@@ -2415,6 +2681,14 @@ class media:
                             break
                 # if a release was sent (cached or uncached), treat the version as successful and stop
                 if ver_dld:
+                    if self.type == "season":
+                        key = self.pack_key()
+                        if key:
+                            media.pack_in_progress[key] = time.time()
+                            ui_print(
+                                "[SEASON_IN_PROGRESS] Pack sent; waiting for Plex to index",
+                                ui_settings.debug,
+                            )
                     # Trigger subtitle download job (best-effort)
                     if subtitle_runner:
                         try:

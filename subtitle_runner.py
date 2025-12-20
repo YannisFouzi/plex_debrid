@@ -10,7 +10,9 @@ from ui.ui_print import ui_print, ui_settings
 MEDIA_ROOT = r"Z:\\"  # Chemin réel où AllDebrid place les fichiers
 SCRIPT_PATH = r"C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add_optimized.py"
 PLEX_TOKEN = "V3f8y4xzv2VEo6xzcSXu"
-PLEX_SECTION = "1"
+PLEX_SECTION_MOVIE = "1"
+PLEX_SECTION_SHOW = "2"
+PLEX_SECTION = PLEX_SECTION_MOVIE
 OST_API = "1uRReegXFmxneboaeeTnaySPzAhfK5hn"
 OST_USER = "rapture"
 OST_PASS = "rNyH.Urf,z#r2LX"
@@ -24,6 +26,15 @@ def _sanitize(text: str) -> str:
     # Lowercase, remove non alnum, collapse spaces
     cleaned = re.sub(r"[^a-z0-9]+", " ", text.lower())
     return cleaned.strip()
+
+
+def _pick_plex_section(job_key: str) -> str:
+    key = (job_key or "").lower()
+    if "shows_" in key or "episodes_" in key:
+        return PLEX_SECTION_SHOW
+    if "movies_" in key:
+        return PLEX_SECTION_MOVIE
+    return PLEX_SECTION
 
 
 def _find_media_path(root: str, query: str, extensions=None, timeout=120, poll=5):
@@ -84,10 +95,10 @@ def _find_media_path(root: str, query: str, extensions=None, timeout=120, poll=5
     return None
 
 
-def _run_subs(path: str):
+def _run_subs(path: str, plex_section_override: str = None):
     script_path = SCRIPT_PATH
     plex_token = PLEX_TOKEN
-    plex_section = PLEX_SECTION
+    plex_section = plex_section_override or PLEX_SECTION
     ost_api = OST_API
     ost_user = OST_USER
     ost_pass = OST_PASS
@@ -138,22 +149,22 @@ def _run_subs(path: str):
 
         ui_print(f"[subs trigger] subprocess started with PID {result.pid}", debug=ui_settings.debug)
 
-        # Attend que le processus se termine (max 60 secondes)
+        # Attend que le processus se termine (max 15 minutes pour les packs séries)
         try:
-            stdout, stderr = result.communicate(timeout=60)
+            stdout, stderr = result.communicate(timeout=900)
 
             # Affiche le code de retour
             ui_print(f"[subs trigger] subprocess finished with return code: {result.returncode}", debug=ui_settings.debug)
 
-            # Affiche stdout s'il y en a
+            # Affiche stdout s'il y en a (afficher TOUTES les lignes pour le debug)
             if stdout:
-                for line in stdout.strip().split('\n')[:20]:  # Max 20 lignes
+                for line in stdout.strip().split('\n'):  # Toutes les lignes
                     if line.strip():
                         ui_print(f"[subs stdout] {line}", debug=ui_settings.debug)
 
             # Affiche stderr s'il y a des erreurs
             if stderr and result.returncode != 0:
-                for line in stderr.strip().split('\n')[:10]:  # Max 10 lignes d'erreur
+                for line in stderr.strip().split('\n'):  # Toutes les lignes
                     if line.strip():
                         ui_print(f"[subs stderr] {line}", debug=True)
 
@@ -164,7 +175,7 @@ def _run_subs(path: str):
                 ui_print(f"[subs trigger] ✗ Subtitle script failed with code {result.returncode}", debug=ui_settings.debug)
 
         except subprocess.TimeoutExpired:
-            ui_print("[subs trigger] subprocess timeout after 60 seconds", debug=ui_settings.debug)
+            ui_print("[subs trigger] subprocess timeout after 15 minutes", debug=ui_settings.debug)
             result.kill()
             stdout, stderr = result.communicate()
 
@@ -192,8 +203,10 @@ def _worker():
 
             path = _find_media_path(root, query)
             if path:
+                plex_section = _pick_plex_section(key)
+                ui_print(f"[subs trigger] using plex section {plex_section} for key '{key}'", debug=ui_settings.debug)
                 ui_print(f"[subs trigger] media found, launching subtitle script for: {path}", debug=ui_settings.debug)
-                _run_subs(path)
+                _run_subs(path, plex_section_override=plex_section)
             else:
                 ui_print(f"[subs trigger] file for '{query}' not found under {root} (timeout).", debug=ui_settings.debug)
         except Exception as e:
