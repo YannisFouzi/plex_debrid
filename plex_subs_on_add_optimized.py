@@ -93,17 +93,24 @@ def has_embedded_french_subtitle(ffprobe_bin: str, video_path: str) -> bool:
     ]
     log(f"FFPROBE -> {' '.join(cmd)}")
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        p = subprocess.run(cmd, capture_output=True, text=False, check=False)
     except FileNotFoundError:
-        raise RuntimeError("ffprobe introuvable. V├®rifie ton PATH ou passe --ffprobe.")
+        raise RuntimeError("ffprobe introuvable. Verifie ton PATH ou passe --ffprobe.")
+    stdout = p.stdout if p.stdout is not None else b""
+    stderr = p.stderr if p.stderr is not None else b""
+    stdout_text = stdout.decode("utf-8", errors="replace").strip()
+    stderr_text = stderr.decode("utf-8", errors="replace").strip()
     if p.returncode != 0:
         log(f"FFPROBE <- rc={p.returncode}")
-        log(f"FFPROBE stderr: {p.stderr.strip()}")
+        log(f"FFPROBE stderr: {stderr_text}")
+        return False
+    if not stdout_text:
+        log("FFPROBE: sortie vide, skip check.")
         return False
 
     try:
-        data = json.loads(p.stdout)
-    except json.JSONDecodeError:
+        data = json.loads(stdout_text)
+    except (json.JSONDecodeError, TypeError):
         log("FFPROBE: sortie JSON invalide, skip check.")
         return False
 
@@ -566,6 +573,28 @@ def format_sxxexx(season_index: str | None, episode_index: str | None) -> str | 
         return None
     return f"S{season_num:02d}E{episode_num:02d}"
 
+def extract_series_title_from_filename(filepath: str) -> str | None:
+    base = os.path.splitext(os.path.basename(filepath))[0]
+    m = EP_TAG_RE.search(base)
+    if not m:
+        return None
+    title = base[:m.start()]
+    title = re.sub(r"\[.*?\]|\(.*?\)", " ", title)
+    title = re.sub(r"[._\-\s]+$", "", title)
+    title = re.sub(r"[._-]+", " ", title)
+    title = re.sub(r"\s+", " ", title).strip()
+    return title or None
+
+def build_query_for_episode_from_file(filepath: str, season_index: str | None, episode_index: str | None) -> str | None:
+    title = extract_series_title_from_filename(filepath)
+    if not title:
+        return None
+    tag = format_sxxexx(season_index, episode_index)
+    if not tag:
+        return None
+    t = re.sub(r"\s+", " ", title.strip())
+    return f"{t} {tag}"
+
 def build_query_for_episode(show_title: str | None, season_index: str | None, episode_index: str | None) -> str | None:
     if not show_title:
         return None
@@ -690,15 +719,28 @@ def main():
 
             log(f"{prefix}: [{idx}/{total}] No embedded FR subtitles, searching OpenSubtitles...")
             if plex_type == "episode":
-                query = build_query_for_episode(show_title, season_index, episode_index)
-                if not query:
-                    raise RuntimeError("OpenSubtitles: impossible de construire la requete episode (serie/saison/episode manquants).")
                 tag = format_sxxexx(season_index, episode_index)
-                log(f"OST search: query='{query}' lang={args.lang}")
-                results = ost_search_movie(args.ost_api_key, args.ost_useragent, bearer, query=query, year=None, lang=args.lang)
-                results = filter_candidates_by_tag(results, tag)
-                if results:
-                    log(f"{prefix}: [{idx}/{total}] {len(results)} candidate(s) after SxxEyy filter")
+                if not tag:
+                    raise RuntimeError("OpenSubtitles: impossible de construire la requete episode (saison/episode manquants).")
+                queries = []
+                file_query = build_query_for_episode_from_file(video_path, season_index, episode_index)
+                if file_query:
+                    queries.append(("file", file_query))
+                plex_query = build_query_for_episode(show_title, season_index, episode_index)
+                if plex_query and (not file_query or plex_query.lower() != file_query.lower()):
+                    queries.append(("plex", plex_query))
+                if not queries:
+                    raise RuntimeError("OpenSubtitles: impossible de construire la requete episode (titre introuvable).")
+                results = []
+                for source, query in queries:
+                    log(f"OST search: query='{query}' source={source} lang={args.lang}")
+                    results = ost_search_movie(args.ost_api_key, args.ost_useragent, bearer, query=query, year=None, lang=args.lang)
+                    results = filter_candidates_by_tag(results, tag)
+                    if results:
+                        if source != "file":
+                            log(f"{prefix}: [{idx}/{total}] OST fallback used source={source}")
+                        log(f"{prefix}: [{idx}/{total}] {len(results)} candidate(s) after SxxEyy filter")
+                        break
             else:
                 query = build_query_from_plex_title(plex_title, plex_year)
                 log(f"OST search: query='{query}' lang={args.lang}")
