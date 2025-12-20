@@ -111,7 +111,7 @@ def scrape():
             debrid.check(obj, force=True)
             scraped_releases = obj.Releases
             if not obj.version == None:
-                releases.sort(scraped_releases, obj.version)
+                releases.sort(scraped_releases, obj.version, element=obj)
             back = False
             while not back:
                 ui_cls('Options/Scraper/')

@@ -675,8 +675,28 @@ class sort:
                 self.operator = operator
                 self.value = value
 
-            def apply(self, scraped_releases: list):
+            def apply(self, scraped_releases: list, element=None):
                 try:
+                    skip_complete_exclude = False
+                    if (
+                        self.attribute == "title"
+                        and self.operator == "exclude"
+                        and element is not None
+                        and getattr(element, "type", None) == "movie"
+                    ):
+                        try:
+                            media_title = getattr(element, "title", "") or ""
+                            media_has_complete = bool(regex.search(r"\bcomplete\b", media_title, regex.I))
+                            pattern_matches_complete = False
+                            if self.value is not None:
+                                try:
+                                    pattern_matches_complete = bool(regex.search(self.value, "complete", regex.I))
+                                except Exception:
+                                    pattern_matches_complete = "complete" in str(self.value).lower()
+                            if media_has_complete and pattern_matches_complete:
+                                skip_complete_exclude = True
+                        except Exception:
+                            skip_complete_exclude = False
                     if self.weight == "requirement":
                         if self.operator == "==":
                             for release in scraped_releases[:]:
@@ -715,6 +735,8 @@ class sort:
                         if self.operator == "exclude":
                             for release in scraped_releases[:]:
                                 if bool(regex.search(self.value, getattr(release, self.attribute), regex.I)):
+                                    if skip_complete_exclude:
+                                        continue
                                     scraped_releases.remove(release)
                             return scraped_releases
                     elif self.weight == "preference":
@@ -740,8 +762,16 @@ class sort:
                                 key=lambda s: bool(regex.search(self.value, getattr(s, self.attribute), regex.I)),reverse=True)
                             return scraped_releases
                         if self.operator == "exclude":
+                            def _exclude_match(release):
+                                try:
+                                    match = bool(regex.search(self.value, getattr(release, self.attribute), regex.I))
+                                except Exception:
+                                    return False
+                                if match and skip_complete_exclude:
+                                    return False
+                                return match
                             scraped_releases.sort(
-                                key=lambda s: bool(regex.search(self.value, getattr(s, self.attribute), regex.I)),reverse=False)
+                                key=_exclude_match,reverse=False)
                             return scraped_releases
                     return scraped_releases
                 except:
@@ -797,7 +827,7 @@ class sort:
             operators = ["==", ">=", "<=", "highest", "lowest"]
             unit = "GB"
 
-            def apply(self, scraped_releases: list):
+            def apply(self, scraped_releases: list, element=None):
                 try:
                     if self.weight == "requirement":
                         if self.operator == "==":
@@ -924,7 +954,7 @@ class sort:
                 self.operator = operator
                 self.value = value
 
-            def apply(self, scraped_releases: list):
+            def apply(self, scraped_releases: list, element=None):
                 try:
                     if self.weight == "requirement":
                         if self.operator == "cached":
@@ -953,7 +983,7 @@ class sort:
             name = "file names"
             operators = ["include", "exclude"]
 
-            def apply(self, scraped_releases: list):
+            def apply(self, scraped_releases: list, element=None):
                 try:
                     if self.weight == "requirement":
                         if self.operator == "include":
@@ -1058,7 +1088,7 @@ class sort:
             operators = ["all files >=", "all files <=", "video files >=", "video files <="]
             unit = "GB"
 
-            def apply(self, scraped_releases: list):
+            def apply(self, scraped_releases: list, element=None):
                 video_formats = '(\.)(YUV|WMV|WEBM|VOB|VIV|SVI|ROQ|RMVB|RM|OGV|OGG|NSV|MXF|MTS|M2TS|TS|MPG|MPEG|M2V|MP2|MPE|MPV|MP4|M4P|M4V|MOV|QT|MNG|MKV|FLV|DRC|AVI|ASF|AMV)'
                 try:
                     if self.weight == "requirement":
@@ -1546,17 +1576,17 @@ class sort:
     ]
     always_on_rules = [version.rule("wanted", "preference", "highest", ""),version.rule("unwanted", "preference", "lowest", "")]
 
-    def __new__(self, scraped_releases: list, version: version,doprint=True):
+    def __new__(self, scraped_releases: list, version: version, doprint=True, element=None):
         if len(scraped_releases) > 0:
             for rule in reversed(sort.always_on_rules):
-                rule.apply(scraped_releases)
+                rule.apply(scraped_releases, element=element)
             for rule in reversed(version.rules):
                 for subrule in sort.version.rule.__subclasses__():
                     if subrule.name == rule[0]:
                         rule = subrule(rule[0], rule[1], rule[2], rule[3])
                         break
                 try:
-                    scraped_releases = rule.apply(scraped_releases)
+                    scraped_releases = rule.apply(scraped_releases, element=element)
                 except:
                     ui_print('error: there seems to be an undefined rule in your version settings. skipping this rule.')
                     continue
