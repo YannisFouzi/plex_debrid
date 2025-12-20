@@ -1,9 +1,6 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# EARLY LOG: Script started
-print("[EARLY] Script python started, importing modules...", flush=True)
-
 import argparse
 import json
 import os
@@ -16,12 +13,9 @@ import io
 import subprocess
 import datetime
 import xml.etree.ElementTree as ET
-from urllib.parse import quote
 
 print("[EARLY] Basic imports done, importing requests...", flush=True)
 import requests
-
-print("[EARLY] All imports done, configuring stdout...", flush=True)
 
 # Ensure stdout/stderr can emit UTF-8 safely on Windows consoles to avoid encode crashes
 if hasattr(sys.stdout, "reconfigure"):
@@ -29,14 +23,10 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-print("[EARLY] Stdout configured, defining log function...", flush=True)
-
 # ---- Utils logs ----
 def log(msg: str) -> None:
     now = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] {msg}", flush=True)
-
-print("[EARLY] Log function ready", flush=True)
 
 # ---- Video discovery (recursive) ----
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".ts"}
@@ -823,17 +813,13 @@ def main():
         log("END -> OK")
     return 0
 if __name__ == "__main__":
-    print("[EARLY] __main__ block reached, about to call main()...", flush=True)
     try:
-        print("[EARLY] Calling main()...", flush=True)
-        exit_code = main()
-        print(f"[EARLY] main() returned {exit_code}, exiting...", flush=True)
-        raise SystemExit(exit_code)
+        raise SystemExit(main())
     except KeyboardInterrupt:
         log("END -> interrupted")
         raise
     except Exception as e:
-        print(f"[EARLY] EXCEPTION in main: {e}", flush=True)
+        log(f"END -> exception: {e}")
         import traceback
         traceback.print_exc()
         raise

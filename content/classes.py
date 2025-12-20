@@ -6,7 +6,7 @@ import re
 import releases
 # Subtitle trigger (optional)
 try:
-    import subtitle_runner
+    from subtitles import runner as subtitle_runner
 except Exception:
     subtitle_runner = None
 import debrid

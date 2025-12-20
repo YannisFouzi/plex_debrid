@@ -8,7 +8,7 @@ from ui import ui_settings
 
 class subtitles:
     media_root = "Z:\\"
-    script_path = "C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add.py"
+    script_path = "C:\\PlexAutomation\\plex_debrid_mehdi\\subtitles\\plex_subs_on_add.py"
     plex_token = ""
     plex_section = ""
     ost_api_key = ""
@@ -412,7 +412,7 @@ settings_list = [
         ],
     ['Subtitles', [
         setting('Subs media root', 'Please enter the media root path (e.g. Z:\\\\): ', subtitles, 'media_root', hidden=True),
-        setting('Subs script path', 'Please enter the full path to plex_subs_on_add.py: ', subtitles, 'script_path', hidden=True),
+        setting('Subs script path', 'Please enter the full path to subtitles\\plex_subs_on_add.py: ', subtitles, 'script_path', hidden=True),
         setting('Subs Plex token', 'Please enter your Plex token for subtitles: ', subtitles, 'plex_token', hidden=True),
         setting('Subs Plex section', 'Please enter the Plex section number: ', subtitles, 'plex_section', hidden=True),
         setting('Subs OpenSubtitles API key', 'Please enter your OpenSubtitles API key: ', subtitles, 'ost_api_key', hidden=True),

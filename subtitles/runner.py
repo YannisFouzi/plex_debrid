@@ -1,4 +1,5 @@
-# Best-effort subtitle trigger: waits for the downloaded media file to appear, then runs plex_subs_on_add.py
+# Best-effort subtitle trigger: waits for the downloaded media file to appear, then runs subtitles/plex_subs_on_add.py
+import json
 import os
 import re
 import time
@@ -6,17 +7,45 @@ import threading
 import subprocess
 from ui.ui_print import ui_print, ui_settings
 
-# Hardcoded subtitle settings (bypass settings UI)
-MEDIA_ROOT = r"Z:\\"  # Chemin réel où AllDebrid place les fichiers
-SCRIPT_PATH = r"C:\\PlexAutomation\\plex_debrid_mehdi\\plex_subs_on_add_optimized.py"
-PLEX_TOKEN = "V3f8y4xzv2VEo6xzcSXu"
-PLEX_SECTION_MOVIE = "1"
-PLEX_SECTION_SHOW = "2"
-PLEX_SECTION = PLEX_SECTION_MOVIE
-OST_API = "1uRReegXFmxneboaeeTnaySPzAhfK5hn"
-OST_USER = "rapture"
-OST_PASS = "rNyH.Urf,z#r2LX"
+# Subtitle settings (from settings.json or env vars)
+_SETTINGS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "settings.json"))
 
+def _load_settings_json():
+    try:
+        with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            return json.loads(f.read())
+    except Exception:
+        return {}
+
+def _get_setting(settings, key, default=""):
+    value = settings.get(key)
+    if value is None or value == "":
+        return default
+    return value
+
+_settings = _load_settings_json()
+MEDIA_ROOT = os.getenv("SUBS_MEDIA_ROOT", _get_setting(_settings, "Subs media root", r"Z:\\"))
+SCRIPT_PATH = os.getenv(
+    "SUBS_SCRIPT_PATH",
+    _get_setting(
+        _settings,
+        "Subs script path",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "plex_subs_on_add.py")),
+    ),
+)
+PLEX_TOKEN = os.getenv("SUBS_PLEX_TOKEN", _get_setting(_settings, "Subs Plex token", ""))
+PLEX_SECTION_MOVIE = os.getenv(
+    "SUBS_PLEX_SECTION_MOVIE",
+    _get_setting(_settings, "Subs Plex section movie", _get_setting(_settings, "Subs Plex section", "1")),
+)
+PLEX_SECTION_SHOW = os.getenv(
+    "SUBS_PLEX_SECTION_SHOW",
+    _get_setting(_settings, "Subs Plex section show", "2"),
+)
+PLEX_SECTION = PLEX_SECTION_MOVIE
+OST_API = os.getenv("SUBS_OST_API_KEY", _get_setting(_settings, "Subs OpenSubtitles API key", ""))
+OST_USER = os.getenv("SUBS_OST_USER", _get_setting(_settings, "Subs OpenSubtitles user", ""))
+OST_PASS = os.getenv("SUBS_OST_PASS", _get_setting(_settings, "Subs OpenSubtitles pass", ""))
 _queue = []
 _queue_lock = threading.Lock()
 _worker_started = False
@@ -43,11 +72,6 @@ def _find_media_path(root: str, query: str, extensions=None, timeout=120, poll=5
     deadline = time.time() + timeout
     query_s = _sanitize(query)
 
-    # Essayer différents patterns de recherche
-    search_patterns = []
-    # Pattern principal : le query sanitisé
-    search_patterns.append(query_s)
-    # Pattern alternatif : tous les mots du query doivent être présents (pas forcément dans l'ordre)
     query_words = query_s.split()
 
     ui_print(f"[subs trigger] searching for '{query}' (sanitized: '{query_s}') under {root}", debug=ui_settings.debug)
@@ -134,7 +158,7 @@ def _run_subs(path: str, plex_section_override: str = None):
         ost_pass,
     ]
 
-    ui_print(f"[subs trigger] executing command: python plex_subs_on_add.py with path={path_to_pass}", debug=ui_settings.debug)
+    ui_print(f"[subs trigger] executing command: python {script_path} with path={path_to_pass}", debug=ui_settings.debug)
 
     try:
         # Lance le subprocess et capture toutes les sorties
