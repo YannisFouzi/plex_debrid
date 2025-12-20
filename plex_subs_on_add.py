@@ -58,17 +58,24 @@ def has_embedded_french_subtitle(ffprobe_bin: str, video_path: str) -> bool:
     ]
     log(f"FFPROBE -> {' '.join(cmd)}")
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        p = subprocess.run(cmd, capture_output=True, text=False, check=False)
     except FileNotFoundError:
-        raise RuntimeError("ffprobe introuvable. Vérifie ton PATH ou passe --ffprobe.")
+        raise RuntimeError("ffprobe introuvable. Verifie ton PATH ou passe --ffprobe.")
+    stdout = p.stdout if p.stdout is not None else b""
+    stderr = p.stderr if p.stderr is not None else b""
+    stdout_text = stdout.decode("utf-8", errors="replace").strip()
+    stderr_text = stderr.decode("utf-8", errors="replace").strip()
     if p.returncode != 0:
         log(f"FFPROBE <- rc={p.returncode}")
-        log(f"FFPROBE stderr: {p.stderr.strip()}")
+        log(f"FFPROBE stderr: {stderr_text}")
+        return False
+    if not stdout_text:
+        log("FFPROBE: sortie vide, skip check.")
         return False
 
     try:
-        data = json.loads(p.stdout)
-    except json.JSONDecodeError:
+        data = json.loads(stdout_text)
+    except (json.JSONDecodeError, TypeError):
         log("FFPROBE: sortie JSON invalide, skip check.")
         return False
 
