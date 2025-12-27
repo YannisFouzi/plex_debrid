@@ -254,27 +254,27 @@ class season(classes.media):
                     self.leafCount = response.MediaContainer.totalSize
                     self.viewedLeafCount = viewCount
 
-                    # Episode Override Integration
-                    ui_print(f"[OVERRIDE DEBUG] Checking overrides for season...")
-                    ui_print(f"[OVERRIDE DEBUG] self.title = '{self.title}'")
-                    ui_print(f"[OVERRIDE DEBUG] self.parentTitle = '{self.parentTitle}'")
-                    ui_print(f"[OVERRIDE DEBUG] self.leafCount (from Plex) = {self.leafCount}")
-                    ui_print(f"[OVERRIDE DEBUG] len(self.Episodes) = {len(self.Episodes)}")
-                    ui_print(f"[OVERRIDE DEBUG] Episodes loaded: {[f'E{ep.index:02d}' for ep in self.Episodes] if self.Episodes else 'None'}")
+                    # Episode Override Integration (logs disabled by default, enable with debug=true)
+                    ui_print(f"[OVERRIDE DEBUG] Checking overrides for season...", debug=ui_settings.debug)
+                    ui_print(f"[OVERRIDE DEBUG] self.title = '{self.title}'", debug=ui_settings.debug)
+                    ui_print(f"[OVERRIDE DEBUG] self.parentTitle = '{self.parentTitle}'", debug=ui_settings.debug)
+                    ui_print(f"[OVERRIDE DEBUG] self.leafCount (from Plex) = {self.leafCount}", debug=ui_settings.debug)
+                    ui_print(f"[OVERRIDE DEBUG] len(self.Episodes) = {len(self.Episodes)}", debug=ui_settings.debug)
+                    ui_print(f"[OVERRIDE DEBUG] Episodes loaded: {[f'E{ep.index:02d}' for ep in self.Episodes] if self.Episodes else 'None'}", debug=ui_settings.debug)
 
                     overrides = load_episode_overrides()
 
                     # Normaliser le titre pour la recherche
                     show_key = self.parentTitle.strip()
-                    ui_print(f"[OVERRIDE DEBUG] Looking for '{show_key}' in overrides...")
+                    ui_print(f"[OVERRIDE DEBUG] Looking for '{show_key}' in overrides...", debug=ui_settings.debug)
 
                     if show_key in overrides:
-                        ui_print(f"[OVERRIDE DEBUG] Found '{show_key}' in overrides!")
+                        ui_print(f"[OVERRIDE DEBUG] Found '{show_key}' in overrides!", debug=ui_settings.debug)
                         override_data = overrides[show_key]
 
                         # Vérifier l'année (optionnel, pour éviter les homonymes)
                         if override_data.get('year') == self.parentYear:
-                            ui_print(f"[OVERRIDE DEBUG] Year matches: {self.parentYear}")
+                            ui_print(f"[OVERRIDE DEBUG] Year matches: {self.parentYear}", debug=ui_settings.debug)
                             season_key = str(self.index)
 
                             if season_key in override_data.get('seasons', {}):
@@ -316,11 +316,11 @@ class season(classes.media):
                                 ui_print(f"[OVERRIDE] leafCount mis à jour: {original_leafCount} -> {self.leafCount}")
                                 ui_print(f"{'='*60}\n")
                             else:
-                                ui_print(f"[OVERRIDE DEBUG] Season {season_key} not found in override config")
+                                ui_print(f"[OVERRIDE DEBUG] Season {season_key} not found in override config", debug=ui_settings.debug)
                         else:
-                            ui_print(f"[OVERRIDE DEBUG] Year mismatch: {self.parentYear} != {override_data.get('year')}")
+                            ui_print(f"[OVERRIDE DEBUG] Year mismatch: {self.parentYear} != {override_data.get('year')}", debug=ui_settings.debug)
                     else:
-                        ui_print(f"[OVERRIDE DEBUG] '{show_key}' NOT found in overrides")
+                        ui_print(f"[OVERRIDE DEBUG] '{show_key}' NOT found in overrides", debug=ui_settings.debug)
             else:
                 time.sleep(1)
 
@@ -356,39 +356,73 @@ class show(classes.media):
                 self.__dict__.update(response.MediaContainer.Metadata[0].__dict__)
                 self.EID = setEID(self)
                 self.Seasons = []
-                url = 'https://discover.provider.plex.tv/library/metadata/' + ratingKey + '/children?includeUserState=1&X-Plex-Container-Size=200&X-Plex-Container-Start=0&X-Plex-Token=' + token
-                response = get(session, url)
-                if not response == None:
-                    if hasattr(response, 'MediaContainer'):
-                        if hasattr(response.MediaContainer, 'Metadata'):
-                            for Season in response.MediaContainer.Metadata[:]:
-                                if Season.index == 0:
-                                    response.MediaContainer.Metadata.remove(Season)
-                            results = [None] * len(response.MediaContainer.Metadata)
-                            threads = []
-                            # start thread for each season
-                            for index, Season in enumerate(response.MediaContainer.Metadata):
-                                Season.parentYear = self.year
-                                Season.parentEID = self.EID
-                                if hasattr(self,"user"):
-                                    Season.user = self.user
-                                t = Thread(target=multi_init, args=(season, Season, results, index))
-                                threads.append(t)
-                                t.start()
-                            # wait for the threads to complete
-                            for t in threads:
-                                t.join()
-                            self.Seasons = results
+                
+                # OPTIMIZATION: Skip loading seasons if show is already in_progress
+                # This saves N API calls and N threads per show that's waiting for Plex to index
+                skip_seasons = False
+                try:
+                    SHOW_IN_PROGRESS_TIMEOUT = 7200  # 2 hours, same as in classes.py
+                    # Generate show key (same logic as classes.media.show_key())
+                    show_key = None
+                    if hasattr(self, "EID") and self.EID:
+                        try:
+                            show_key = ("show", tuple(sorted(self.EID)))
+                        except Exception:
+                            pass
+                    if not show_key and hasattr(self, "title") and hasattr(self, "year"):
+                        show_key = ("show", self.title, self.year)
+                    
+                    # Check if show is in_progress
+                    if show_key and show_key in classes.media.show_in_progress:
+                        elapsed = time.time() - classes.media.show_in_progress[show_key]
+                        if elapsed < SHOW_IN_PROGRESS_TIMEOUT:
+                            skip_seasons = True
                             self.leafCount = 0
                             self.viewedLeafCount = 0
                             self.duration = 0
-                            for season_ in self.Seasons:
-                                self.leafCount += season_.leafCount
-                                self.viewedLeafCount += season_.viewedLeafCount
-                                self.duration += season_.duration if hasattr(season_,"duration") else 0
-                    success = True
+                            ui_print(f"[SHOW_INIT] Skipping season loading for '{self.title}' (in_progress for {int(elapsed)}s)", debug=ui_settings.debug)
+                except Exception as e:
+                    # Fallback: load seasons normally if anything fails
+                    ui_print(f"[SHOW_INIT] Error checking in_progress, loading seasons normally: {e}", debug=ui_settings.debug)
+                    skip_seasons = False
+                
+                if not skip_seasons:
+                    url = 'https://discover.provider.plex.tv/library/metadata/' + ratingKey + '/children?includeUserState=1&X-Plex-Container-Size=200&X-Plex-Container-Start=0&X-Plex-Token=' + token
+                    response = get(session, url)
+                    if not response == None:
+                        if hasattr(response, 'MediaContainer'):
+                            if hasattr(response.MediaContainer, 'Metadata'):
+                                for Season in response.MediaContainer.Metadata[:]:
+                                    if Season.index == 0:
+                                        response.MediaContainer.Metadata.remove(Season)
+                                results = [None] * len(response.MediaContainer.Metadata)
+                                threads = []
+                                # start thread for each season
+                                for index, Season in enumerate(response.MediaContainer.Metadata):
+                                    Season.parentYear = self.year
+                                    Season.parentEID = self.EID
+                                    if hasattr(self,"user"):
+                                        Season.user = self.user
+                                    t = Thread(target=multi_init, args=(season, Season, results, index))
+                                    threads.append(t)
+                                    t.start()
+                                # wait for the threads to complete
+                                for t in threads:
+                                    t.join()
+                                self.Seasons = results
+                                self.leafCount = 0
+                                self.viewedLeafCount = 0
+                                self.duration = 0
+                                for season_ in self.Seasons:
+                                    self.leafCount += season_.leafCount
+                                    self.viewedLeafCount += season_.viewedLeafCount
+                                    self.duration += season_.duration if hasattr(season_,"duration") else 0
+                        success = True
+                    else:
+                        time.sleep(1)
                 else:
-                    time.sleep(1)
+                    # Skipped seasons loading, mark as success
+                    success = True
             else:
                 time.sleep(1)
         if not hasattr(self,"watchlistedAt"):

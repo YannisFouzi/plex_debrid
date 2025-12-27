@@ -176,6 +176,79 @@ def _expected_episode_count(show):
     return None, None
 
 
+def get_original_title(media):
+    """
+    Récupère le titre original d'un média via TMDB.
+    Utile pour les contenus non-anglais (ex: "Validé" au lieu de "All the Way Up")
+    """
+    if not api_key:
+        return None
+    
+    eids = getattr(media, "EID", [])
+    ids = _extract_ids(eids)
+    title = getattr(media, "title", "")
+    year = getattr(media, "year", None)
+    media_type = getattr(media, "type", "show")
+    
+    tmdb_id = ids.get("tmdb")
+    
+    try:
+        # Si pas d'ID TMDB direct, essayer de le trouver via IMDB ou TVDB
+        if not tmdb_id and ids.get("imdb"):
+            find = _tmdb_find(ids["imdb"], "imdb_id")
+            results_key = "tv_results" if media_type in ["show", "season", "episode"] else "movie_results"
+            results = find.get(results_key, [])
+            if results:
+                tmdb_id = str(results[0].get("id"))
+        
+        if not tmdb_id and ids.get("tvdb"):
+            find = _tmdb_find(ids["tvdb"], "tvdb_id")
+            tv_results = find.get("tv_results", [])
+            if tv_results:
+                tmdb_id = str(tv_results[0].get("id"))
+        
+        # Fallback: recherche par titre
+        if not tmdb_id and title:
+            if media_type in ["show", "season", "episode"]:
+                search = _tmdb_search_show(title, year)
+                result = _pick_tmdb_result(search.get("results", []), str(title).lower(), year)
+            else:
+                # Pour les films
+                params = {"query": title}
+                if year:
+                    params["year"] = str(year)
+                search = _tmdb_get("/search/movie", params=params)
+                results = search.get("results", []) if search else []
+                result = results[0] if results else None
+            
+            if result:
+                tmdb_id = str(result.get("id"))
+        
+        if not tmdb_id:
+            return None
+        
+        # Récupérer les détails pour avoir le titre original
+        if media_type in ["show", "season", "episode"]:
+            details = _tmdb_get(f"/tv/{tmdb_id}")
+            original_title = details.get("original_name") if details else None
+            current_title = details.get("name") if details else None
+        else:
+            details = _tmdb_get(f"/movie/{tmdb_id}")
+            original_title = details.get("original_title") if details else None
+            current_title = details.get("title") if details else None
+        
+        # Ne retourner que si le titre original est différent du titre actuel
+        if original_title and current_title and original_title.lower() != current_title.lower():
+            ui_print(f"[tmdb] original title found: '{original_title}' (current: '{current_title}')", ui_settings.debug)
+            return original_title
+        
+        return None
+        
+    except Exception as e:
+        ui_print(f"[tmdb] get_original_title failed for '{title}': {e}", ui_settings.debug)
+        return None
+
+
 def get_show_status(media, allow_fallback_search=True):
     if not api_key:
         return None

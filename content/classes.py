@@ -1,14 +1,16 @@
-﻿from base import *
+from base import *
 
 import os
 import re
 
 import releases
-# Subtitle trigger (optional)
-try:
-    from subtitles import runner as subtitle_runner
-except Exception:
-    subtitle_runner = None
+# Subtitle trigger (optional) - DISABLED
+# To re-enable, uncomment the try/except block below and remove 'subtitle_runner = None'
+# try:
+#     from subtitles import runner as subtitle_runner
+# except Exception:
+#     subtitle_runner = None
+subtitle_runner = None  # Subtitles disabled
 import debrid
 import scraper
 from ui.ui_print import *
@@ -298,6 +300,7 @@ class media:
     ignore_queue = []
     downloaded_versions = []
     pack_in_progress = {}
+    show_in_progress = {}  # Track shows with all seasons already sent to debrid
 
     def __init__(self, other):
         self.__dict__.update(other.__dict__)
@@ -353,6 +356,19 @@ class media:
         if hasattr(self, "parentGuid"):
             return ("season", self.parentGuid, self.index)
         return ("season", self.parentTitle, self.index)
+
+    def show_key(self):
+        """Generate a unique key for a show (used for show_in_progress tracking)"""
+        if self.type != "show":
+            return None
+        if hasattr(self, "EID"):
+            try:
+                return ("show", tuple(sorted(self.EID)))
+            except Exception:
+                return ("show", tuple(self.EID))
+        if hasattr(self, "Guid"):
+            return ("show", self.Guid)
+        return ("show", self.title, self.year if hasattr(self, "year") else None)
 
     def match(self, service):
         if not hasattr(self, "services"):
@@ -606,6 +622,19 @@ class media:
                 else:
                     if not title in self.alternate_titles:
                         self.alternate_titles += [title]
+            # Generate variant with "1" replaced by "i" for all alternate_titles
+            # Only replace "1" when it's in the MIDDLE of a word (surrounded by letters)
+            # This avoids breaking titles like "F1" where "1" is at the end
+            import re
+            new_variants = []
+            for alt_title in self.alternate_titles:
+                # Pattern: 1 surrounded by letters (e.g., plur1bus -> pluribus)
+                title_1_to_i = re.sub(r'(?<=[a-zA-Z])1(?=[a-zA-Z])', 'i', alt_title)
+                if title_1_to_i != alt_title and title_1_to_i and title_1_to_i not in self.alternate_titles:
+                    new_variants.append(title_1_to_i)
+            if new_variants:
+                self.alternate_titles.extend(new_variants)
+                ui_print(f"[ALIAS] Added 1->i variants: {new_variants}", ui_settings.debug)
             if self.type == "show":
                 if hasattr(self, "Seasons"):
                     for season in self.Seasons:
@@ -618,12 +647,28 @@ class media:
             if not hasattr(self, "alternate_titles"):
                 self.alternate_titles = []
 
-            # Generate variant without digits for titles like "PLUR1BUS" -> "pluribus"
+            # TMDB: Récupérer le titre original (ex: "Validé" au lieu de "All the Way Up")
+            try:
+                original_title = sys.modules["content.services.tmdb"].get_original_title(self)
+                if original_title:
+                    original_title_clean = releases.rename(original_title)
+                    if original_title_clean and original_title_clean not in self.alternate_titles:
+                        # Ajouter le titre original EN PREMIER pour priorité
+                        self.alternate_titles.insert(0, original_title_clean)
+                        ui_print(f"[TMDB] Added original title: '{original_title_clean}' for '{self.title}'")
+            except Exception as e:
+                ui_print(f"[TMDB] Could not get original title: {e}", ui_settings.debug)
+
+            # Generate variant with "1" replaced by "i" for titles like "PLUR1BUS" -> "pluribus"
+            # Only replace "1" when it's in the MIDDLE of a word (surrounded by letters)
+            # This avoids breaking titles like "F1" where "1" is at the end
             import re
-            title_no_digits = re.sub(r'\d+', '', title)
-            if title_no_digits != title and title_no_digits:
-                if not title_no_digits in self.alternate_titles:
-                    self.alternate_titles.append(title_no_digits)
+            # Pattern: 1 surrounded by letters (e.g., PLUR1BUS -> PLURiBUS)
+            title_1_to_i = re.sub(r'(?<=[a-zA-Z])1(?=[a-zA-Z])', 'i', title)
+            if title_1_to_i != title and title_1_to_i:
+                if title_1_to_i not in self.alternate_titles:
+                    self.alternate_titles.append(title_1_to_i)
+                    ui_print(f"[ALIAS] Added 1->i variant: '{title_1_to_i}' for '{title}'", ui_settings.debug)
 
             if hasattr(self, "scraping_adjustment"):
                 for operator, value in self.scraping_adjustment:
@@ -637,7 +682,9 @@ class media:
                 if not title in self.alternate_titles:
                     self.alternate_titles += [title]
             else:
-                self.alternate_titles = [title]
+                # Ajouter le titre anglais aussi (après le titre original)
+                if title not in self.alternate_titles:
+                    self.alternate_titles.append(title)
             if self.type == "show":
                 if hasattr(self, "Seasons"):
                     for season in self.Seasons:
@@ -692,7 +739,7 @@ class media:
                     + title
                     + ":?.)(series.|[^A-Za-z0-9]+)?((\(?"
                     + str(self.year)
-                    + "\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))"
+                    + "\)?.)|(complete.)|(INTEGRALE?.)|(INTÉGRALE?.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))"
                 )
             elif self.type == "season":
                 title = title.replace("." + str(self.parentYear), "")
@@ -1948,6 +1995,92 @@ class media:
                 # if there are uncollected episodes
                 if len(self.Seasons) > 0:
                     tic = time.perf_counter()
+                    
+                    # CHECK: Skip scraping if show or all seasons are already in progress
+                    # Timeout after 2 hours (7200 seconds) to prevent stuck states
+                    SHOW_IN_PROGRESS_TIMEOUT = 7200
+                    show_key = self.show_key()
+                    if show_key and show_key in media.show_in_progress:
+                        elapsed = time.time() - media.show_in_progress[show_key]
+                        if elapsed < SHOW_IN_PROGRESS_TIMEOUT:
+                            ui_print(
+                                f"[SHOW_IN_PROGRESS] Show already sent to debrid ({int(elapsed)}s ago); waiting for Plex to index, skipping scrape",
+                                ui_settings.debug,
+                            )
+                            # Refresh seasons
+                            try:
+                                for season in self.Seasons:
+                                    season.collect(refresh_=True)
+                            except Exception as e:
+                                ui_print(f"[SHOW_IN_PROGRESS] collect() failed: {e}", ui_settings.debug)
+                            
+                            # CHECK if show is now complete in Plex - if so, remove from watchlist
+                            if self.hasended():
+                                # Use fresh library from plex module (not the stale one passed to download())
+                                from content.services.plex import current_library as fresh_library
+                                show_complete, local_count, expected_count, expected_source = self.show_complete(fresh_library)
+                                ui_print(
+                                    f"[SHOW_IN_PROGRESS] Checking completion: local={local_count} expected={expected_count} complete={show_complete}",
+                                    ui_settings.debug,
+                                )
+                                if show_complete:
+                                    ui_print(f"[SHOW_IN_PROGRESS] Show is complete! Removing from watchlist.", ui_settings.debug)
+                                    del media.show_in_progress[show_key]
+                                    self.watchlist.remove([], self)
+                            
+                            toc = time.perf_counter()
+                            ui_print("took " + str(round(toc - tic, 2)) + "s")
+                            return refresh_, False
+                        else:
+                            # Timeout expired, clear and retry
+                            ui_print(
+                                f"[SHOW_IN_PROGRESS] Timeout expired ({int(elapsed)}s > {SHOW_IN_PROGRESS_TIMEOUT}s); clearing and retrying",
+                                ui_settings.debug,
+                            )
+                            del media.show_in_progress[show_key]
+                    
+                    # Check if ALL seasons are already in pack_in_progress
+                    all_seasons_in_progress = True
+                    for season in self.Seasons:
+                        season_key = season.pack_key()
+                        if not season_key or season_key not in media.pack_in_progress:
+                            all_seasons_in_progress = False
+                            break
+                    
+                    if all_seasons_in_progress and len(self.Seasons) > 0:
+                        ui_print(
+                            f"[SHOW_IN_PROGRESS] All {len(self.Seasons)} seasons already sent to debrid; waiting for Plex, skipping scrape",
+                            ui_settings.debug,
+                        )
+                        # Refresh seasons
+                        try:
+                            for season in self.Seasons:
+                                season.collect(refresh_=True)
+                        except Exception as e:
+                            ui_print(f"[SHOW_IN_PROGRESS] collect() failed: {e}", ui_settings.debug)
+                        
+                        # CHECK if show is now complete in Plex - if so, remove from watchlist
+                        if self.hasended():
+                            # Use fresh library from plex module (not the stale one passed to download())
+                            from content.services.plex import current_library as fresh_library
+                            show_complete, local_count, expected_count, expected_source = self.show_complete(fresh_library)
+                            ui_print(
+                                f"[SHOW_IN_PROGRESS] Checking completion: local={local_count} expected={expected_count} complete={show_complete}",
+                                ui_settings.debug,
+                            )
+                            if show_complete:
+                                ui_print(f"[SHOW_IN_PROGRESS] Show is complete! Removing from watchlist.", ui_settings.debug)
+                                # Clear all season pack_in_progress
+                                for season in self.Seasons:
+                                    season_key = season.pack_key()
+                                    if season_key and season_key in media.pack_in_progress:
+                                        del media.pack_in_progress[season_key]
+                                self.watchlist.remove([], self)
+                        
+                        toc = time.perf_counter()
+                        ui_print("took " + str(round(toc - tic, 2)) + "s")
+                        return refresh_, False
+                    
                     langs = []
                     for version in self.versions():
                         if not version.lang in langs and not version.lang == "en":
@@ -1957,6 +2090,11 @@ class media:
                     imdb_scraped = False
                     # if there is more than one uncollected season
                     if len(self.Seasons) > 1:
+                        # Build list of required season numbers for early-stop optimization
+                        required_seasons = [getattr(s, 'index', None) for s in self.Seasons]
+                        required_seasons = [s for s in required_seasons if s is not None]
+                        ui_print(f"[EARLY_STOP] Looking for {len(required_seasons)} seasons: {required_seasons}", ui_settings.debug)
+                        
                         if self.isanime():
                             for k, title in enumerate(self.alternate_titles[:3]):
                                 self.Releases += scraper.scrape(
@@ -1967,6 +2105,7 @@ class media:
                                     + ")?(nyaa"
                                     + "|".join(self.alternate_titles)
                                     + ")?",
+                                    required_seasons=required_seasons,
                                 )
                                 if (
                                     len(self.Releases) < 20
@@ -1981,6 +2120,7 @@ class media:
                                         + "|nyaa"
                                         + "|".join(self.alternate_titles)
                                         + ")",
+                                        required_seasons=required_seasons,
                                     )
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
@@ -1990,6 +2130,7 @@ class media:
                                 self.Releases += scraper.scrape(
                                     self.query(title),
                                     self.deviation() + "(" + imdbID + ")?",
+                                    required_seasons=required_seasons,
                                 )
                                 if (
                                     len(self.Releases) < 20
@@ -1998,15 +2139,17 @@ class media:
                                     and not imdbID == "."
                                 ):
                                     self.Releases += scraper.scrape(
-                                        imdbID, "(.*|S00|" + imdbID + ")"
+                                        imdbID, "(.*|S00|" + imdbID + ")",
+                                        required_seasons=required_seasons,
                                     )
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
                                     break
                         debrid.check(self)
                         parentReleases = copy.deepcopy(self.Releases)
-                        # if there are more than 3 uncollected seasons, look for multi-season releases before downloading single-season releases
-                        if len(self.Seasons) > 3:
+                        
+                        # Look for multi-season releases (lowered threshold from >3 to >=2)
+                        if len(self.Seasons) >= 2:
                             # gather file information on scraped, cached releases
                             multi_season_releases = []
                             season_releases = [None] * len(self.Seasons)
@@ -2120,13 +2263,28 @@ class media:
                             library=library, parentReleases=parentReleases
                         )
                     retry = False
+                    all_downloaded = True
                     for index, result in enumerate(results):
                         if result == None:
+                            all_downloaded = False
                             continue
                         if result[0]:
                             refresh_ = True
+                        else:
+                            all_downloaded = False
                         if result[1]:
                             retry = True
+                    
+                    # Mark show as in_progress if all seasons were successfully sent to debrid
+                    if all_downloaded and not retry:
+                        show_key = self.show_key()
+                        if show_key:
+                            media.show_in_progress[show_key] = time.time()
+                            ui_print(
+                                f"[SHOW_IN_PROGRESS] All {len(self.Seasons)} seasons sent to debrid; marking show as in_progress",
+                                ui_settings.debug,
+                            )
+                    
                     if not retry and (
                         self.watchlist.autoremove == "both"
                         or self.watchlist.autoremove == "show"
@@ -2146,6 +2304,11 @@ class media:
                             expected_count = None
                             expected_source = None
                         if ended and show_complete:
+                            # Clear show from in_progress since it's complete
+                            show_key = self.show_key()
+                            if show_key and show_key in media.show_in_progress:
+                                del media.show_in_progress[show_key]
+                                ui_print(f"[SHOW_IN_PROGRESS] Show complete; cleared from in_progress", ui_settings.debug)
                             self.watchlist.remove([], self)
                         else:
                             ui_print(
@@ -2243,24 +2406,33 @@ class media:
                     debrid_downloaded, retry = self.debrid_download()
                     ui_print(f"[SEASON_PACK] season_pack() returned True")
                     ui_print(f"[SEASON_PACK] debrid_download() returned: downloaded={debrid_downloaded}, retry={retry}")
-                    if scraper.traditional() or debrid_downloaded:
-                        ui_print(f"[SKIP_SCRAPING] Checking which episodes were actually downloaded")
-                        ui_print(f"[SKIP_SCRAPING] scraper.traditional()={scraper.traditional()}, debrid_downloaded={debrid_downloaded}")
-
-                        # Only set skip_scraping for episodes that match releases that were downloaded
-                        for episode in self.Episodes:
-                            # Check if this episode matches any of the season releases
-                            episode_matched = False
-                            for release in self.Releases:
-                                if regex.match(episode.deviation(), release.title, regex.I):
-                                    episode_matched = True
-                                    break
-
-                            if episode_matched:
-                                episode.skip_scraping = True
-                                ui_print(f"[SKIP_SCRAPING] Episode {episode.index}: Found matching release, skip_scraping set to True")
-                            else:
-                                ui_print(f"[SKIP_SCRAPING] Episode {episode.index}: No matching release, keeping skip_scraping=False")
+                    
+                    # SHORT-CIRCUIT: If season pack was sent, STOP immediately and don't process episodes
+                    if debrid_downloaded:
+                        ui_print(f"[SEASON_PACK] Season pack sent to debrid! Stopping here - no need to check individual episodes.", ui_settings.debug)
+                        # Mark season as handled
+                        self.pack_downloaded = True
+                        for ep in self.Episodes:
+                            ep.skip_download = True
+                            ep.skip_scraping = True
+                        # Set pack_in_progress flag for next cycle
+                        key = self.pack_key()
+                        if key:
+                            media.pack_in_progress[key] = time.time()
+                        # Trigger collection refresh
+                        try:
+                            self.collect(refresh_=True)
+                        except Exception as e:
+                            ui_print(f"[SEASON_PACK] collect() failed: {e}", ui_settings.debug)
+                        # Trigger subtitles
+                        if subtitle_runner:
+                            try:
+                                ui_print(f"[subs trigger] enqueue subs for season pack '{self.query()}'", debug=ui_settings.debug)
+                                subtitle_runner.enqueue(self)
+                            except Exception as e:
+                                ui_print(f"[subs trigger] error: {e}", ui_settings.debug)
+                        # RETURN IMMEDIATELY - don't continue with episode-by-episode processing
+                        return True, False
                 # If there was nothing downloaded, scrape specifically for this season
                 if not debrid_downloaded:
                     ui_print(f"[SEASON_SCRAPING] Season pack failed, scraping specifically for season {self.index}")
@@ -2352,102 +2524,96 @@ class media:
                     ui_print(f"[SEASON_PACK_2] season_pack() returned True, calling debrid_download()")
                     debrid_downloaded, retry = self.debrid_download()
                     ui_print(f"[SEASON_PACK_2] debrid_download() returned: downloaded={debrid_downloaded}, retry={retry}")
+                    
+                    # SHORT-CIRCUIT: If season pack was sent, STOP immediately
+                    if debrid_downloaded:
+                        ui_print(f"[SEASON_PACK_2] Season pack sent! Stopping here.", ui_settings.debug)
+                        self.pack_downloaded = True
+                        for ep in self.Episodes:
+                            ep.skip_download = True
+                            ep.skip_scraping = True
+                        key = self.pack_key()
+                        if key:
+                            media.pack_in_progress[key] = time.time()
+                        try:
+                            self.collect(refresh_=True)
+                        except Exception as e:
+                            ui_print(f"[SEASON_PACK_2] collect() failed: {e}", ui_settings.debug)
+                        if subtitle_runner:
+                            try:
+                                subtitle_runner.enqueue(self)
+                            except Exception as e:
+                                ui_print(f"[subs trigger] error: {e}", ui_settings.debug)
+                        return True, False
                 else:
                     ui_print(f"[SEASON_PACK_2] season_pack() returned False")
-            if debrid_downloaded:
-                ui_print(f"[EPISODE_RELEASES] debrid_downloaded=True, setting up episode releases")
-                refresh_ = True
-                attempt_episodes = False
-                for episode in self.Episodes:
-                    ui_print(f"[EPISODE_RELEASES] Checking episode {episode.index}")
-                    matches = [r.title for r in scraped_releases if regex.match(episode.deviation(), r.title, regex.I)]
-                    if matches:
-                        ui_print(f"[EPISODE_RELEASES] Episode {episode.index} matches {len(matches)} releases")
-                        ui_print(f"[EPISODE_RELEASES] First match: {matches[0][:100] if matches else 'None'}")
-                        episode.skip_scraping = True
-                        ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: skip_scraping=True")
-
-                        episode_versions = episode.versions()
-                        ui_print(f"[EPISODE_RELEASES] Episode {episode.index} has {len(episode_versions)} versions")
-
-                        for version in copy.deepcopy(episode_versions):
-                            ui_print(f"[EPISODE_RELEASES] Testing version: {version.name}")
-                            for rule in version.rules[:]:
-                                if rule[0] == "bitrate":
-                                    version.rules.remove(rule)
-                            test_releases = copy.deepcopy(scraped_releases)
-                            releases.sort(test_releases, version, False, element=episode)
-                            ui_print(f"[EPISODE_RELEASES] Version {version.name}: {len(test_releases)} matching releases")
-                            if len(test_releases) > 0:
-                                attempt_episodes = True
-                                ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: Found releases, attempt_episodes=True")
-                                break
-                        if not attempt_episodes:
-                            episode.skip_download = True
-                            ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: No valid releases, skip_download=True")
-                    else:
-                        ui_print(f"[EPISODE_RELEASES] Episode {episode.index}: No matches in scraped_releases")
-
-            # If a season pack was downloaded (or files are already present) and no per-episode attempt is needed,
-            # skip per-episode processing and stop retries for this season.
-            if (debrid_downloaded or getattr(self, "pack_downloaded", False) or already_collected_eps) and not attempt_episodes:
-                # mark season/episodes as already handled for next scheduler cycle
-                self.pack_downloaded = True
-                for ep in self.Episodes:
-                    ep.skip_download = True
-                    ep.skip_scraping = True
-                # trigger collection/refresh to help Plex see the new files
-                try:
-                    self.collect(refresh_=True)
-                except Exception as e:
-                    ui_print(f"[SEASON_PACK] collect() failed after pack download: {e}", ui_settings.debug)
+            
+            # If we reach here, no season pack was downloaded - proceed with episode-by-episode fallback
+            # But first check if season was already handled (pack downloaded = all episodes covered)
+            # NOTE: Don't check already_collected_eps here! That list only contains episodes already in Plex,
+            # not ALL episodes. The episode loop will skip those (they have skip_download=True).
+            if getattr(self, "pack_downloaded", False):
                 ui_print(
-                    "[EPISODE LOOP DEBUG] Season pack already downloaded; skipping per-episode downloads and relying on pack subtitles",
+                    "[EPISODE LOOP DEBUG] Season pack already downloaded; skipping per-episode downloads",
                     ui_settings.debug,
                 )
                 # Return with retry=False to avoid scheduler relaunch
                 return True, False
+            
+            # Count how many episodes still need downloading
+            episodes_to_download = [ep for ep in self.Episodes if not getattr(ep, "skip_download", False)]
+            if not episodes_to_download:
+                ui_print(
+                    f"[EPISODE LOOP DEBUG] All {len(self.Episodes)} episodes already present in Plex; nothing to download",
+                    ui_settings.debug,
+                )
+                return True, False
+            
+            ui_print(
+                f"[EPISODE LOOP DEBUG] {len(episodes_to_download)}/{len(self.Episodes)} episodes need downloading",
+                ui_settings.debug,
+            )
             # Check if all episodes were successfuly downloaded, download them or queue them to be ignored otherwise
-            ui_print(f"[EPISODE LOOP DEBUG] Starting episode loop for {self.title}")
-            ui_print(f"[EPISODE LOOP DEBUG] Total episodes in self.Episodes: {len(self.Episodes)}")
-            ui_print(f"[EPISODE LOOP DEBUG] Episode list: {[f'E{ep.index:02d}' for ep in self.Episodes]}")
+            ui_print(f"[EPISODE LOOP DEBUG] Starting episode loop for {self.title}", debug=ui_settings.debug)
+            ui_print(f"[EPISODE LOOP DEBUG] Total episodes in self.Episodes: {len(self.Episodes)}", debug=ui_settings.debug)
+            ui_print(f"[EPISODE LOOP DEBUG] Episode list: {[f'E{ep.index:02d}' for ep in self.Episodes]}", debug=ui_settings.debug)
 
             for episode_index, episode in enumerate(self.Episodes):
-                ui_print(f"\n[EPISODE LOOP DEBUG] Processing episode {episode_index + 1}/{len(self.Episodes)}")
-                ui_print(f"[EPISODE LOOP DEBUG] Episode index: {episode.index if hasattr(episode, 'index') else 'NO INDEX'}")
-                ui_print(f"[EPISODE LOOP DEBUG] Episode title: {episode.title if hasattr(episode, 'title') else 'NO TITLE'}")
+                ui_print(f"[EPISODE LOOP DEBUG] Processing episode {episode_index + 1}/{len(self.Episodes)}", debug=ui_settings.debug)
+                ui_print(f"[EPISODE LOOP DEBUG] Episode index: {episode.index if hasattr(episode, 'index') else 'NO INDEX'}", debug=ui_settings.debug)
+                ui_print(f"[EPISODE LOOP DEBUG] Episode title: {episode.title if hasattr(episode, 'title') else 'NO TITLE'}", debug=ui_settings.debug)
 
                 # Check versions
                 episode_versions = episode.versions() if hasattr(episode, 'versions') else []
-                ui_print(f"[EPISODE LOOP DEBUG] episode.versions() returned {len(episode_versions)} versions")
+                ui_print(f"[EPISODE LOOP DEBUG] episode.versions() returned {len(episode_versions)} versions", debug=ui_settings.debug)
 
                 if len(episode_versions) > 0:
-                    ui_print(f"[EPISODE LOOP DEBUG] Episode has versions, proceeding with download check")
+                    ui_print(f"[EPISODE LOOP DEBUG] Episode has versions, proceeding with download check", debug=ui_settings.debug)
 
                     downloaded = False
                     retryep = True
 
                     # Check skip_download attribute
                     has_skip_download = hasattr(episode, "skip_download")
-                    ui_print(f"[EPISODE LOOP DEBUG] hasattr(episode, 'skip_download') = {has_skip_download}")
+                    ui_print(f"[EPISODE LOOP DEBUG] hasattr(episode, 'skip_download') = {has_skip_download}", debug=ui_settings.debug)
 
                     if has_skip_download:
-                        ui_print(f"[EPISODE LOOP DEBUG] episode.skip_download = {episode.skip_download}")
+                        ui_print(f"[EPISODE LOOP DEBUG] episode.skip_download = {episode.skip_download}", debug=ui_settings.debug)
 
                     if not has_skip_download:
-                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.download()...")
+                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.download()...", debug=ui_settings.debug)
                         try:
                             downloaded, retryep = episode.download(
                                 library=library, parentReleases=scraped_releases
                             )
-                            ui_print(f"[EPISODE LOOP DEBUG] episode.download() returned: downloaded={downloaded}, retryep={retryep}")
+                            ui_print(f"[EPISODE LOOP DEBUG] episode.download() returned: downloaded={downloaded}, retryep={retryep}", debug=ui_settings.debug)
                         except Exception as e:
                             ui_print(f"[EPISODE LOOP ERROR] Exception in episode.download(): {str(e)}")
                             downloaded = False
                             retryep = False
                     else:
                         if getattr(episode, "already_collected", False):
-                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download: episode already present locally")
+                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download: episode already present locally", debug=ui_settings.debug)
                             downloaded = True
                             retryep = False
                             # Trigger subtitle fetch even without a fresh download
@@ -2458,54 +2624,54 @@ class media:
                                 except Exception as e:
                                     ui_print(f"[subs trigger] error: {e}", ui_settings.debug)
                         else:
-                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download due to skip_download attribute")
+                            ui_print(f"[EPISODE LOOP DEBUG] Skipping download due to skip_download attribute", debug=ui_settings.debug)
 
                     if downloaded:
-                        ui_print(f"[EPISODE LOOP DEBUG] Episode downloaded successfully, setting refresh_=True")
+                        ui_print(f"[EPISODE LOOP DEBUG] Episode downloaded successfully, setting refresh_=True", debug=ui_settings.debug)
                         refresh_ = True
                     else:
-                        ui_print(f"[EPISODE LOOP DEBUG] Episode NOT downloaded")
+                        ui_print(f"[EPISODE LOOP DEBUG] Episode NOT downloaded", debug=ui_settings.debug)
 
                     if retryep:
-                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.watch()")
+                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.watch()", debug=ui_settings.debug)
                         episode.watch()
                 else:
-                    ui_print(f"[EPISODE LOOP DEBUG] Episode has NO versions, checking if should download anyway")
+                    ui_print(f"[EPISODE LOOP DEBUG] Episode has NO versions, checking if should download anyway", debug=ui_settings.debug)
 
                     # Check if episode should be downloaded even without versions
                     has_skip_download = hasattr(episode, "skip_download") and episode.skip_download
                     has_skip_scraping = hasattr(episode, "skip_scraping") and episode.skip_scraping
 
-                    ui_print(f"[EPISODE LOOP DEBUG] skip_download={has_skip_download}, skip_scraping={has_skip_scraping}")
+                    ui_print(f"[EPISODE LOOP DEBUG] skip_download={has_skip_download}, skip_scraping={has_skip_scraping}", debug=ui_settings.debug)
 
                     if not has_skip_download and not has_skip_scraping:
-                        ui_print(f"[EPISODE LOOP DEBUG] Episode has no versions but should try downloading")
-                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.download() to trigger individual scraping...")
+                        ui_print(f"[EPISODE LOOP DEBUG] Episode has no versions but should try downloading", debug=ui_settings.debug)
+                        ui_print(f"[EPISODE LOOP DEBUG] Calling episode.download() to trigger individual scraping...", debug=ui_settings.debug)
 
                         try:
                             downloaded, retryep = episode.download(
                                 library=library, parentReleases=scraped_releases
                             )
-                            ui_print(f"[EPISODE LOOP DEBUG] episode.download() returned: downloaded={downloaded}, retryep={retryep}")
+                            ui_print(f"[EPISODE LOOP DEBUG] episode.download() returned: downloaded={downloaded}, retryep={retryep}", debug=ui_settings.debug)
 
                             if downloaded:
-                                ui_print(f"[EPISODE LOOP DEBUG] Episode downloaded successfully after individual scraping!")
+                                ui_print(f"[EPISODE LOOP DEBUG] Episode downloaded successfully after individual scraping!", debug=ui_settings.debug)
                                 refresh_ = True
                             else:
-                                ui_print(f"[EPISODE LOOP DEBUG] Episode NOT downloaded after individual scraping")
+                                ui_print(f"[EPISODE LOOP DEBUG] Episode NOT downloaded after individual scraping", debug=ui_settings.debug)
 
                             if retryep:
-                                ui_print(f"[EPISODE LOOP DEBUG] Adding episode to watch list")
+                                ui_print(f"[EPISODE LOOP DEBUG] Adding episode to watch list", debug=ui_settings.debug)
                                 episode.watch()
                         except Exception as e:
                             ui_print(f"[EPISODE LOOP ERROR] Exception in episode.download(): {str(e)}")
                     else:
-                        ui_print(f"[EPISODE LOOP DEBUG] Episode has skip flags, not attempting download")
+                        ui_print(f"[EPISODE LOOP DEBUG] Episode has skip flags, not attempting download", debug=ui_settings.debug)
 
-                ui_print(f"[EPISODE LOOP DEBUG] Finished processing episode {episode_index + 1}/{len(self.Episodes)}")
+                ui_print(f"[EPISODE LOOP DEBUG] Finished processing episode {episode_index + 1}/{len(self.Episodes)}", debug=ui_settings.debug)
 
-            ui_print(f"\n[EPISODE LOOP DEBUG] Loop completed. Processed all {len(self.Episodes)} episodes")
-            ui_print(f"[EPISODE LOOP DEBUG] Returning: refresh_={refresh_ if 'refresh_' in locals() else 'undefined'}, retry={retry or retryep if 'retryep' in locals() else retry}")
+            ui_print(f"[EPISODE LOOP DEBUG] Loop completed. Processed all {len(self.Episodes)} episodes", debug=ui_settings.debug)
+            ui_print(f"[EPISODE LOOP DEBUG] Returning: refresh_={refresh_ if 'refresh_' in locals() else 'undefined'}, retry={retry or retryep if 'retryep' in locals() else retry}", debug=ui_settings.debug)
             return refresh_, (retry or retryep)
         elif self.type == "episode":
             ui_print(f"[EPISODE_DOWNLOAD] Processing episode: {self.title if hasattr(self, 'title') else 'Unknown'} (Episode {self.index})")
@@ -2763,6 +2929,13 @@ class media:
         except:
             ui_print("error: couldnt set release bitrate", ui_settings.debug)
 
+    def _is_season_pack_release(self, title):
+        """Check if a release title is a season pack (S01) vs individual episode (S01E01)."""
+        # Season pack: has S01, S02, etc. but NOT S01E01, S02E03, etc.
+        has_season = regex.search(r'\.S\d{1,2}\.', title, regex.I) or regex.search(r'\.S\d{1,2}$', title, regex.I)
+        has_episode = regex.search(r'S\d{1,2}E\d{1,2}', title, regex.I)
+        return has_season and not has_episode
+
     def season_pack(self, releases):
         ui_print(f"[SEASON_PACK_CHECK] Entering season_pack() with {len(self.Releases)} self.Releases and {len(releases)} parent releases")
         ui_print(f"[SEASON_PACK_CHECK] Episodes to check: {len(self.Episodes)}")
@@ -2770,17 +2943,23 @@ class media:
         season_releases = -1
         episode_releases = [-2] * len(self.Episodes)
 
-        # Log self.Releases analysis
+        # Log self.Releases analysis - ONLY count actual SEASON PACKS, not individual episodes
         cached_count = 0
+        pack_count = 0
         for release in self.Releases:  # find the highest resolution of all the cached releases
             if len(release.cached) + len(release.maybe_cached) > 0:
                 cached_count += 1
-                ui_print(f"[SEASON_PACK_CHECK] Cached release: {release.title[:80]} | Resolution: {release.resolution}")
-                if int(release.resolution) > season_releases:
-                    season_releases = int(release.resolution)
+                is_pack = self._is_season_pack_release(release.title)
+                if is_pack:
+                    pack_count += 1
+                    ui_print(f"[SEASON_PACK_CHECK] Cached PACK: {release.title[:80]} | Resolution: {release.resolution}")
+                    if int(release.resolution) > season_releases:
+                        season_releases = int(release.resolution)
+                else:
+                    ui_print(f"[SEASON_PACK_CHECK] Cached EPISODE (ignored for pack decision): {release.title[:60]} | Resolution: {release.resolution}")
 
-        ui_print(f"[SEASON_PACK_CHECK] Found {cached_count} cached releases in self.Releases")
-        ui_print(f"[SEASON_PACK_CHECK] Highest season resolution: {season_releases}")
+        ui_print(f"[SEASON_PACK_CHECK] Found {cached_count} cached releases ({pack_count} packs, {cached_count - pack_count} episodes)")
+        ui_print(f"[SEASON_PACK_CHECK] Highest PACK resolution: {season_releases}")
 
         for i, episode in enumerate(
             self.Episodes
@@ -2809,6 +2988,11 @@ class media:
         ui_print(f"[SEASON_PACK_CHECK] Episode resolutions: {episode_releases}")
         ui_print(f"[SEASON_PACK_CHECK] Lowest episode resolution: {lowest}")
         ui_print(f"[SEASON_PACK_CHECK] Season pack resolution: {season_releases}")
+
+        # If no season pack was found (season_releases == -1), don't use season pack logic
+        if season_releases == -1:
+            ui_print(f"[SEASON_PACK_CHECK] DECISION: No season pack found (resolution=-1), will process episodes individually")
+            return False
 
         # If no cached episode release available for all episodes, or the quality is equal or lower to the cached season packs return True
         if lowest <= season_releases:
