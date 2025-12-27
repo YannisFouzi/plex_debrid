@@ -1,10 +1,19 @@
 from base import *
 from ui.ui_print import *
 import releases
+import inspect
 #import child modules
 from scraper import services
 
-def scrape(query, altquery="(.*)"):
+def scrape(query, altquery="(.*)", required_seasons=None):
+    """
+    Scrape for releases.
+    
+    Args:
+        query: Search query
+        altquery: Alternative query pattern for filtering
+        required_seasons: Optional list of season numbers for early-stop optimization (prowlarr only)
+    """
     ui_print('done')
     scrapers = services.sequential()
     if len(scrapers) == 0:
@@ -20,7 +29,7 @@ def scrape(query, altquery="(.*)"):
         results = [None] * len(sequence)
         threads = []
         for index, scraper_ in enumerate(sequence):
-            t = Thread(target=multi_scrape, args=(scraper_, query, altquery, results, index))
+            t = Thread(target=multi_scrape, args=(scraper_, query, altquery, results, index, required_seasons))
             threads.append(t)
             try:
                 t.start()
@@ -69,5 +78,14 @@ def traditional():
     return False
 
 # Multiprocessing scrape method
-def multi_scrape(cls, query, altquery, result, index):
-    result[index] = cls.scrape(query, altquery)
+def multi_scrape(cls, query, altquery, result, index, required_seasons=None):
+    # Check if this scraper's scrape() function accepts required_seasons parameter
+    try:
+        sig = inspect.signature(cls.scrape)
+        if 'required_seasons' in sig.parameters:
+            result[index] = cls.scrape(query, altquery, required_seasons=required_seasons)
+        else:
+            result[index] = cls.scrape(query, altquery)
+    except Exception:
+        # Fallback: call without required_seasons
+        result[index] = cls.scrape(query, altquery)

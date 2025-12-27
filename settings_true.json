@@ -1,0 +1,845 @@
+{
+    "Content Services": [
+        "Plex",
+        "Trakt",
+        "Overseerr"
+    ],
+    "Plex users": [
+        [
+            "Fouziplex",
+            "V3f8y4xzv2VEo6xzcSXu"
+        ]
+    ],
+    "Plex auto remove": "both",
+    "Trakt users": [],
+    "Trakt lists": [],
+    "Trakt auto remove": "both",
+    "Trakt early movie releases": "false",
+    "Overseerr users": [
+        "all"
+    ],
+    "Overseerr API Key": "",
+    "Overseerr Base URL": "",
+    "TMDb API Key": "2a5937dcefab1c5203d73e1c2df32de0",
+    "Library collection service": [
+        "Plex Library"
+    ],
+    "Library update services": [
+        "Plex Libraries"
+    ],
+    "Library ignore services": [
+        "Plex Discover Watch Status"
+    ],
+    "Trakt library user": [],
+    "Trakt refresh user": [],
+    "Plex library refresh": [
+        "5",
+        "4",
+        "6",
+        "3"
+    ],
+    "Plex library partial scan": "true",
+    "Plex library refresh delay": "5",
+    "Plex server address": "http://127.0.0.1:32400",
+    "Plex library check": [],
+    "Plex ignore user": "MehdiPlex",
+    "Trakt ignore user": "",
+    "Local ignore list path": "",
+    "Jellyfin API Key": "",
+    "Jellyfin server address": "http://jellyfin:8096",
+    "Sources": [
+        "torrentio"
+    ],
+    "Versions": [
+        [
+            "movies_4k_multi",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "movies",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "==",
+                    "2160"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "\\bcomplete\\b"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(?:HDR10\\+?|HDR)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "movies_4k_any",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "movies",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "==",
+                    "2160"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "\\bcomplete\\b"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(?:HDR10\\+?|HDR)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "movies_1080_multi",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "movies",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "1080"
+                ],
+                [
+                    "resolution",
+                    "requirement",
+                    ">=",
+                    "1080"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "\\bcomplete\\b"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(10bit|10-bit|x265|hevc)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(BluRay|BRRip|BDRip)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "exclude",
+                    "(DVDRip|DVDSCR|DVD-R|DVD)"
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "movies_1080_any",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "movies",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "1080"
+                ],
+                [
+                    "resolution",
+                    "requirement",
+                    ">=",
+                    "1080"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "\\bcomplete\\b"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(10bit|10-bit|x265|hevc)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(BluRay|BRRip|BDRip)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "exclude",
+                    "(DVDRip|DVDSCR|DVD-R|DVD)"
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "shows_4k_multi",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "shows",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "2160"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(?:HDR10\\+?|HDR)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "shows_4k_any",
+            [
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "shows",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "2160"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(?:HDR10\\+?|HDR)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "shows_1080_multi",
+            [
+                [
+                    "retries",
+                    ">=",
+                    "5"
+                ],
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "shows",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "1080"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(HDR|DO?VI?)"
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ],
+        [
+            "shows_1080_any",
+            [
+                [
+                    "retries",
+                    ">=",
+                    "5"
+                ],
+                [
+                    "retries",
+                    "<=",
+                    "48"
+                ],
+                [
+                    "media type",
+                    "shows",
+                    ""
+                ]
+            ],
+            "en",
+            [
+                [
+                    "resolution",
+                    "requirement",
+                    "<=",
+                    "1080"
+                ],
+                [
+                    "title",
+                    "requirement",
+                    "exclude",
+                    "(3D|H?D?.?CAM|H?D?.?TS)"
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(MULTI|TRUEFRENCH|FRENCH)"
+                ],
+                [
+                    "resolution",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "title",
+                    "preference",
+                    "include",
+                    "(HDR|DO?VI?)"
+                ],
+                [
+                    "size",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "seeders",
+                    "preference",
+                    "highest",
+                    ""
+                ],
+                [
+                    "size",
+                    "requirement",
+                    ">=",
+                    "0.1"
+                ]
+            ]
+        ]
+    ],
+    "Special character renaming": [
+        [
+            "1",
+            "i"
+        ],
+        [
+            "&",
+            "and"
+        ],
+        [
+            "\u00fc",
+            "ue"
+        ],
+        [
+            "\u00e4",
+            "ae"
+        ],
+        [
+            "\u00e2",
+            "a"
+        ],
+        [
+            "\u00e1",
+            "a"
+        ],
+        [
+            "\u00e0",
+            "a"
+        ],
+        [
+            "\u00f6",
+            "oe"
+        ],
+        [
+            "\u00f4",
+            "o"
+        ],
+        [
+            "\u014d",
+            "o"
+        ],
+        [
+            "\u00df",
+            "ss"
+        ],
+        [
+            "\u00e9",
+            "e"
+        ],
+        [
+            "\u00e8",
+            "e"
+        ],
+        [
+            "\u00ee",
+            "i"
+        ],
+        [
+            "sh!t",
+            "shit"
+        ],
+        [
+            "f**k",
+            "fuck"
+        ],
+        [
+            "f**king",
+            "fucking"
+        ],
+        [
+            "?",
+            ""
+        ],
+        [
+            ":",
+            ".?"
+        ],
+        [
+            "(",
+            ""
+        ],
+        [
+            ")",
+            ""
+        ],
+        [
+            "`",
+            ""
+        ],
+        [
+            "\u00b4",
+            ""
+        ],
+        [
+            ",",
+            ""
+        ],
+        [
+            "/",
+            "."
+        ],
+        [
+            "!",
+            ".?"
+        ],
+        [
+            " - ",
+            " "
+        ],
+        [
+            "'",
+            ".?"
+        ],
+        [
+            "\u200b",
+            ""
+        ],
+        [
+            "*",
+            ""
+        ],
+        [
+            " ",
+            "."
+        ]
+    ],
+    "Rarbg API Key": "r05xvbq6ul",
+    "Jackett Base URL": "http://127.0.0.1:9117",
+    "Jackett API Key": "",
+    "Jackett resolver timeout": "1",
+    "Jackett indexer filter": "!status:failing,test:passed",
+    "Prowlarr Base URL": "http://127.0.0.1:9696",
+    "Prowlarr API Key": "",
+    "Orionoid API Key": "",
+    "Orionoid Scraper Parameters": [
+        [
+            "limitcount",
+            "5"
+        ],
+        [
+            "sortvalue",
+            "popularity"
+        ],
+        [
+            "streamtype",
+            "torrent"
+        ],
+        [
+            "filename",
+            "true"
+        ]
+    ],
+    "Nyaa parameters": "&c=1_0&s=seeders&o=desc",
+    "Nyaa sleep time": "5",
+    "Nyaa proxy": "nyaa.si",
+    "Torrentio Scraper Parameters": "https://torrentio.strem.fun/sort=qualitysize|qualityfilter=480p,scr,cam/manifest.json",
+    "Torrentio Base URL": "https://torrentio.strem.fun/",
+    "Zilean Base URL": "http://zilean.zilean:8181",
+    "Mediafusion Base URL": "https://mediafusion.elfhosted.com",
+    "Mediafusion API Key": "",
+    "Mediafusion Request Timeout": "60",
+    "Mediafusion Rate Limit": "10",
+    "Mediafusion Scraper Parameters": "",
+    "Comet Request Timeout": "60",
+    "Comet Rate Limit": "10",
+    "Comet Scraper Parameters": "",
+    "Subs media root": "Z:\\",
+    "Subs script path": "C:\\PlexAutomation\\plex_debrid_mehdi\\subtitles\\plex_subs_on_add.py",
+    "Subs Plex token": "V3f8y4xzv2VEo6xzcSXu",
+    "Subs Plex section": "1",
+    "Subs OpenSubtitles API key": "",
+    "Subs OpenSubtitles user": "",
+    "Subs OpenSubtitles pass": "",
+    "Debrid Services": [
+        "All Debrid"
+    ],
+    "Tracker specific Debrid Services": [],
+    "Real Debrid API Key": "",
+    "All Debrid API Key": "1kkqpAE6s13SfMFcTgpt",
+    "Premiumize API Key": "",
+    "Debrid Link API Key": "",
+    "Put.io API Key": "",
+    "Torbox API Key": "",
+    "Show Menu on Startup": "true",
+    "Debug printing": "true",
+    "Log to file": "false",
+    "Watchlist loop interval (sec)": 30,
+    "version": [
+        "2.103",
+        "Settings compatible update",
+        []
+    ]
+}
