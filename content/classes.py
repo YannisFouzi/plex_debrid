@@ -4,6 +4,8 @@ import os
 import re
 
 import releases
+# Release policy (4K timer + upgrade queue)
+from content import release_policy
 # Subtitle trigger (optional) - DISABLED
 # To re-enable, uncomment the try/except block below and remove 'subtitle_runner = None'
 # try:
@@ -1043,6 +1045,8 @@ class media:
         if self in media.ignore_queue:
             match = next((x for x in media.ignore_queue if self == x), None)
             self.ignored_count = match.ignored_count
+        if hasattr(self, "force_retries") and self.force_retries is not None:
+            self.ignored_count = self.force_retries
         # remove versions that dont apply
         for version in versions[:]:
             if not version.applies(self):
@@ -1347,6 +1351,8 @@ class media:
     def watch(self):
         global imdb_scraped
         imdb_scraped = False
+        if getattr(self, "_skip_watch", False):
+            return
         names = []
         retries = 0
         for version in self.versions():
@@ -1968,6 +1974,9 @@ class media:
                         if not len(self.Releases) == 0:
                             self.year = year
                             break
+                    self.Releases, _policy = release_policy.apply_release_policy(
+                        self, self.Releases
+                    )
                     debrid_downloaded, retry = self.debrid_download(force=False)
                     if debrid_downloaded:
                         refresh_ = True
@@ -2338,6 +2347,10 @@ class media:
                     self.Releases += [release]
             # Set the episodes parent releases to be the seasons parent releases:
             scraped_releases = copy.deepcopy(parentReleases)
+            self.Releases, _policy = release_policy.apply_release_policy(
+                self, self.Releases
+            )
+            scraped_releases = release_policy.filter_forced_4k(self, scraped_releases)
 
             # If the season pack is already present locally (episodes have files in Plex or on disk),
             # mark them as collected to avoid pointless re-download attempts.
@@ -2502,6 +2515,9 @@ class media:
                                 break
                     # Set the episodes parent releases to be the newly scraped releases
                     ui_print(f"[SEASON_SCRAPING] Total releases after scraping: {len(self.Releases)}")
+                    self.Releases, _policy = release_policy.apply_release_policy(
+                        self, self.Releases
+                    )
                     debrid.check(self)
                     ui_print(f"[SEASON_SCRAPING] Checked debrid cache status")
                     scraped_releases = copy.deepcopy(self.Releases)
@@ -2691,6 +2707,10 @@ class media:
             debrid_downloaded = False
             retry = True
 
+            self.Releases, _policy = release_policy.apply_release_policy(
+                self, self.Releases
+            )
+
             if len(self.Releases) > 0:
                 ui_print(f"[EPISODE_DOWNLOAD] Calling debrid_download() with {len(self.Releases)} releases")
                 debrid_downloaded, retry = self.debrid_download()
@@ -2743,6 +2763,9 @@ class media:
                             break
 
                 ui_print(f"[EPISODE_DOWNLOAD] After scraping, total releases: {len(self.Releases)}")
+                self.Releases, _policy = release_policy.apply_release_policy(
+                    self, self.Releases
+                )
                 debrid_downloaded, retry = self.debrid_download()
                 ui_print(f"[EPISODE_DOWNLOAD] Final debrid_download returned: downloaded={debrid_downloaded}, retry={retry}")
 
@@ -2833,12 +2856,30 @@ class media:
                     ):
                         if debrid.download(self, stream=True, force=force):
                             self.downloaded()
+                            try:
+                                if self.Releases:
+                                    release_policy.maybe_queue_upgrade(
+                                        self, self.Releases[0]
+                                    )
+                            except Exception as e:
+                                ui_print(
+                                    f"[UPGRADE QUEUE] error: {e}", ui_settings.debug
+                                )
                             downloaded += [True]
                             ver_dld = True
                             break
                     elif not self.type == "show" and debrid_uncached:
                         if debrid.download(self, stream=False, force=force):
                             self.downloaded()
+                            try:
+                                if self.Releases:
+                                    release_policy.maybe_queue_upgrade(
+                                        self, self.Releases[0]
+                                    )
+                            except Exception as e:
+                                ui_print(
+                                    f"[UPGRADE QUEUE] error: {e}", ui_settings.debug
+                                )
                             debrid.downloading += [
                                 self.query() + " [" + self.version.name + "]"
                             ]

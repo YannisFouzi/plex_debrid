@@ -4,6 +4,7 @@ import content
 import scraper
 import releases
 import debrid
+from content import release_policy
 from ui import ui_settings
 from ui.ui_print import *
 from settings import *
@@ -464,6 +465,7 @@ def threaded(stop):
                     t0 = time.time()
         ui_print('done')
     while not stop():
+        release_policy.run_upgrade_checks()
         if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
             library = content.classes.library()[0]()
             watchlists = plex_watchlist + trakt_watchlist + overseerr_requests
