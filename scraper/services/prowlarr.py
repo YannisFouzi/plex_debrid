@@ -7,7 +7,7 @@ base_url = "http://127.0.0.1:9696"
 api_key = ""
 name = "prowlarr"
 session = requests.Session()
-max_results = 100
+max_results = 250
 category_filter_ids = [2000, 5000]
 resolver_timeout = 30
 max_resolve = 50
@@ -18,8 +18,158 @@ resolver_retry_delay = 1
 # Optimization settings
 filter_low_quality = True  # Filter out 720p and below before resolving
 
+_LEADING_ARTICLES = {"the", "a", "an", "le", "la", "les", "un", "une"}
+_ALLOWED_EXTRAS = {
+    "4k", "2160", "2160p", "1080", "1080p", "720", "720p", "480", "480p",
+    "uhd", "hdr", "hdr10", "hdr10plus", "dv", "dovi", "dolby", "vision",
+    "web", "webrip", "webdl", "web-dl", "bluray", "brrip", "bdrip", "remux",
+    "dvdrip", "hdtv", "hdrip", "x264", "x265", "h264", "h265", "hevc", "av1",
+    "xvid", "10bit", "8bit", "12bit", "ddp", "dd", "dts", "truehd", "atmos",
+    "aac", "ac3", "eac3", "flac", "opus", "mp3", "multi", "vff", "vf", "vfi",
+    "vo", "vostfr", "truefrench", "french", "fr", "german", "de", "english",
+    "eng", "ita", "italian", "spa", "spanish", "es", "jpn", "japanese",
+    "rus", "russian", "dual", "dub", "dubbed", "extended", "director",
+    "directors", "cut", "uncut", "unrated", "remastered", "remaster",
+    "edition", "special", "collector", "limited", "ultimate", "final", "noir",
+    "imax", "redux", "theatrical", "proper", "repack", "complete",
+    "integrale", "integral", "anniversary", "version", "nf", "amzn", "dsnp",
+    "atvp", "hmax", "hulu", "itunes",
+}
+
 def _debug(msg):
     ui_print(msg, ui_settings.debug)
+
+def _id_to_int(value):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    try:
+        text = str(value).lower()
+    except Exception:
+        return None
+    if text.startswith("tt"):
+        text = text[2:]
+    match = regex.search(r"(\d+)", text)
+    if not match:
+        return None
+    try:
+        parsed = int(match.group(1))
+    except Exception:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+def _normalize_ids(ids):
+    if not ids:
+        return {"imdb": None, "tmdb": None, "tvdb": None}
+    imdb = tmdb = tvdb = None
+    if isinstance(ids, dict):
+        imdb = _id_to_int(ids.get("imdb"))
+        tmdb = _id_to_int(ids.get("tmdb"))
+        tvdb = _id_to_int(ids.get("tvdb"))
+    else:
+        for item in ids:
+            text = str(item).lower()
+            if imdb is None:
+                match = regex.search(r"(?:imdb)://(tt\d+)", text)
+                if match:
+                    imdb = _id_to_int(match.group(1))
+            if tmdb is None:
+                match = regex.search(r"(?:tmdb|themoviedb)://(\d+)", text)
+                if match:
+                    tmdb = _id_to_int(match.group(1))
+            if tvdb is None:
+                match = regex.search(r"(?:tvdb|thetvdb)://(\d+)", text)
+                if match:
+                    tvdb = _id_to_int(match.group(1))
+    return {"imdb": imdb, "tmdb": tmdb, "tvdb": tvdb}
+
+def _result_id(result, attr):
+    try:
+        return _id_to_int(getattr(result, attr, None))
+    except Exception:
+        return None
+
+def _result_has_ids(result):
+    return (
+        _result_id(result, "imdbId") is not None
+        or _result_id(result, "tmdbId") is not None
+        or _result_id(result, "tvdbId") is not None
+    )
+
+def _normalize_tokens(text):
+    if text is None:
+        return []
+    normalized = regex.sub(r"[^A-Za-z0-9]+", ".", str(text).lower())
+    normalized = regex.sub(r"\.+", ".", normalized).strip(".")
+    return normalized.split(".") if normalized else []
+
+def _extract_query_tokens(query):
+    tokens = _normalize_tokens(query)
+    year = None
+    if tokens and regex.match(r"^(19|20)\d{2}$", tokens[-1]):
+        year = tokens[-1]
+        tokens = tokens[:-1]
+    return tokens, year
+
+def _match_prefix_length(result_tokens, query_tokens):
+    if len(result_tokens) >= len(query_tokens) and result_tokens[:len(query_tokens)] == query_tokens:
+        return len(query_tokens)
+    if query_tokens and query_tokens[0] in _LEADING_ARTICLES:
+        trimmed = query_tokens[1:]
+        if trimmed and len(result_tokens) >= len(trimmed) and result_tokens[:len(trimmed)] == trimmed:
+            return len(trimmed)
+    return 0
+
+def _is_show_like_altquery(altquery):
+    if not altquery:
+        return False
+    hay = str(altquery).lower()
+    return ("s[0-9]" in hay) or ("season" in hay) or ("series" in hay) or ("e[0-9]" in hay)
+
+def _is_show_marker(token):
+    if not token:
+        return False
+    if regex.match(r"^s\d{1,2}(e\d{1,2})?$", token):
+        return True
+    return token in {"season", "seasons", "complete", "integrale", "integral", "series", "pack", "collection"}
+
+def _is_year_token(token):
+    return bool(token and regex.match(r"^(19|20)\d{2}$", token))
+
+def _passes_title_guard(query, altquery, title):
+    if not query or altquery == "(.*)":
+        return True
+    query_tokens, query_year = _extract_query_tokens(query)
+    if not query_tokens:
+        return True
+    result_tokens = _normalize_tokens(title)
+    prefix_len = _match_prefix_length(result_tokens, query_tokens)
+    if prefix_len == 0:
+        return False
+    next_token = result_tokens[prefix_len] if len(result_tokens) > prefix_len else None
+    if next_token is None:
+        return True
+    show_like = _is_show_like_altquery(altquery)
+    if show_like:
+        return _is_show_marker(next_token) or _is_year_token(next_token) or next_token in _ALLOWED_EXTRAS
+    if query_year and next_token == query_year:
+        return True
+    return _is_year_token(next_token) or next_token in _ALLOWED_EXTRAS
+
+def _matches_target_ids(result, target_ids):
+    imdb_id = target_ids.get("imdb")
+    tmdb_id = target_ids.get("tmdb")
+    tvdb_id = target_ids.get("tvdb")
+    if imdb_id is not None and _result_id(result, "imdbId") == imdb_id:
+        return True
+    if tmdb_id is not None and _result_id(result, "tmdbId") == tmdb_id:
+        return True
+    if tvdb_id is not None and _result_id(result, "tvdbId") == tvdb_id:
+        return True
+    return False
 
 def _is_low_quality(title):
     """Check if release is 720p or lower quality (to filter out before resolving)."""
@@ -35,7 +185,11 @@ def _is_low_quality(title):
 def _is_season_pack(title):
     """Check if release is a season pack (S01, S02) vs individual episode (S01E01)."""
     # Season pack: has S01, S02, etc. but NOT S01E01, S02E03, etc.
-    has_season = regex.search(r'\.S\d{1,2}\.', title, regex.I)
+    if regex.search(r'\b(complete|integrale)\b', title, regex.I):
+        return True
+    if regex.search(r'\bS\d{1,2}\W*S?\d{1,2}\b', title, regex.I):
+        return True
+    has_season = regex.search(r'\.S\d{1,2}\.', title, regex.I) or regex.search(r'\.S\d{1,2}$', title, regex.I)
     has_episode = regex.search(r'\.S\d{1,2}E\d{1,2}', title, regex.I)
     return has_season and not has_episode
 
@@ -157,7 +311,7 @@ def setup(cls, new=False):
     from scraper.services import setup
     setup(cls,new)
 
-def scrape(query, altquery, required_seasons=None):
+def scrape(query, altquery, required_seasons=None, ids=None):
     """
     Scrape for releases.
     
@@ -165,6 +319,7 @@ def scrape(query, altquery, required_seasons=None):
         query: Search query
         altquery: Alternative query pattern for filtering
         required_seasons: Optional list of season numbers (currently unused, kept for compatibility)
+        ids: Optional dict of ids (imdb/tmdb/tvdb) for exact match filtering
     """
     from scraper.services import active
     scraped_releases = []
@@ -192,12 +347,33 @@ def scrape(query, altquery, required_seasons=None):
                 ui_print('[prowlarr] error: prowlarr didnt return any data.')
                 return []
             response = [result for result in response if is_movies_or_tv(result)]
-            if len(response) > max_results:
-                response = response[:max_results]
+            target_ids = _normalize_ids(ids)
+            if any(target_ids.values()):
+                has_any_id = any(_result_has_ids(r) for r in response)
+                if has_any_id:
+                    filtered = [r for r in response if _matches_target_ids(r, target_ids)]
+                    if filtered:
+                        response = filtered
+                        _debug(f"[prowlarr][id-filter] kept {len(response)} releases after id match")
+                    else:
+                        idless = [r for r in response if not _result_has_ids(r)]
+                        if idless:
+                            response = idless
+                            _debug(f"[prowlarr][id-filter] no id match; kept {len(response)} id-less releases")
+                        else:
+                            _debug("[prowlarr][id-filter] no id match; returning 0 releases")
+                            return []
+                else:
+                    _debug("[prowlarr][id-filter] no ids on results; skipping id filter")
+            guard_filtered = 0
             for result in response[:]:
                 result.title = result.title.replace(' ', '.')
                 result.title = result.title.replace(':', '').replace("'", '')
                 result.title = regex.sub(r'\.+', ".", result.title)
+                if not _result_has_ids(result) and not _passes_title_guard(query, altquery, result.title):
+                    response.remove(result)
+                    guard_filtered += 1
+                    continue
                 if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I) and result.protocol == 'torrent':
                     if hasattr(result, 'magnetUrl'):
                         if not result.magnetUrl == None:
@@ -213,6 +389,11 @@ def scrape(query, altquery, required_seasons=None):
                             response.remove(result)
                 else:
                     response.remove(result)
+            if guard_filtered:
+                _debug(f"[prowlarr][title-guard] filtered {guard_filtered} id-less releases")
+            if len(response) > max_results:
+                response = response[:max_results]
+                _debug(f"[prowlarr][limit] trimmed to {max_results} results after filtering")
             # OPTIMIZATION 1: Filter out low quality (720p and below) before resolving
             if filter_low_quality:
                 before_filter = len(response)

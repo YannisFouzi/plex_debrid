@@ -20,6 +20,30 @@ from ui.ui_print import *
 imdb_scraped = False
 
 
+def _extract_ids_from_eids(eids):
+    ids = {"imdb": None, "tmdb": None, "tvdb": None}
+    if not eids:
+        return ids
+    if isinstance(eids, str):
+        eids = [eids]
+    for eid in eids:
+        value = str(eid)
+        lower = value.lower()
+        if not ids["imdb"]:
+            match = regex.search(r"(?:imdb)://(tt\d+)", lower)
+            if match:
+                ids["imdb"] = match.group(1)
+        if not ids["tmdb"]:
+            match = regex.search(r"(?:tmdb|themoviedb)://(\d+)", lower)
+            if match:
+                ids["tmdb"] = match.group(1)
+        if not ids["tvdb"]:
+            match = regex.search(r"(?:tvdb|thetvdb)://(\d+)", lower)
+            if match:
+                ids["tvdb"] = match.group(1)
+    return ids
+
+
 class watchlist(Sequence):
     def __init__(self, other):
         self.data = other
@@ -1899,6 +1923,9 @@ class media:
         global imdb_scraped
         refresh_ = False
         i = 0
+        post_refresh_autoremove = False
+        post_refresh_autoremove_ended = False
+        post_refresh_autoremove_source = "unknown"
         self.Releases = []
         if self.type in ["movie", "show"]:
             if not hasattr(self, "title") or self.title == "" or self.title is None:
@@ -1923,6 +1950,7 @@ class media:
         for EID in EIDS:
             if EID.startswith("imdb"):
                 service, imdbID = EID.split("://")
+        media_ids = _extract_ids_from_eids(EIDS)
         # set anime info before episodes are removed
         self.isanime()
         if self.type == "movie":
@@ -1957,6 +1985,7 @@ class media:
                                     + "("
                                     + imdbID
                                     + ")?",
+                                    ids=media_ids,
                                 )
                                 if (
                                     len(self.Releases) < 20
@@ -1965,7 +1994,7 @@ class media:
                                     and not imdbID == "."
                                 ):
                                     self.Releases += scraper.scrape(
-                                        imdbID, "(.*|" + imdbID + ")"
+                                        imdbID, "(.*|" + imdbID + ")", ids=media_ids
                                     )
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
@@ -2115,6 +2144,7 @@ class media:
                                     + "|".join(self.alternate_titles)
                                     + ")?",
                                     required_seasons=required_seasons,
+                                    ids=media_ids,
                                 )
                                 if (
                                     len(self.Releases) < 20
@@ -2130,6 +2160,7 @@ class media:
                                         + "|".join(self.alternate_titles)
                                         + ")",
                                         required_seasons=required_seasons,
+                                        ids=media_ids,
                                     )
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
@@ -2140,6 +2171,7 @@ class media:
                                     self.query(title),
                                     self.deviation() + "(" + imdbID + ")?",
                                     required_seasons=required_seasons,
+                                    ids=media_ids,
                                 )
                                 if (
                                     len(self.Releases) < 20
@@ -2150,6 +2182,7 @@ class media:
                                     self.Releases += scraper.scrape(
                                         imdbID, "(.*|S00|" + imdbID + ")",
                                         required_seasons=required_seasons,
+                                        ids=media_ids,
                                     )
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
@@ -2177,11 +2210,36 @@ class media:
                                 match = regex.match(
                                     season_queries_str, release.title, regex.I
                                 )
+                                is_multi_title = self._is_multi_season_title(release.title)
+                                release_quality = self._title_quality(release.title)
+                                if is_multi_title and release not in multi_season_releases:
+                                    multi_season_releases += [release]
+                                is_single_season = (
+                                    (not is_multi_title)
+                                    and (
+                                        self._is_season_pack_release(release.title)
+                                        or regex.search(r"\bseason\W*\d+\b", release.title, regex.I)
+                                    )
+                                )
+                                if match and is_single_season:
+                                    for index, season_query in enumerate(
+                                        season_queries
+                                    ):
+                                        if regex.match(
+                                            season_query, release.title, regex.I
+                                        ):
+                                            if (
+                                                season_releases[index] == None
+                                                or release_quality > season_releases[index]
+                                            ):
+                                                season_releases[index] = release_quality
+                                            break
                                 for version in release.files:
                                     if isinstance(version.wanted, int):
                                         # if a multi season pack contains more than half of all uncollected episodes, accept it as a multi-season-pack.
                                         if version.wanted > minimum_episodes:
-                                            multi_season_releases += [release]
+                                            if release not in multi_season_releases:
+                                                multi_season_releases += [release]
                                             break
                                             # if the release is a single-season pack, find out the quality
                                         if match:
@@ -2197,21 +2255,12 @@ class media:
                                                             self.Seasons[index].files()
                                                         )
                                                         - 2
-                                                        and season_releases[index]
-                                                        == None
                                                     ):
-                                                        quality = regex.search(
-                                                            "(2160|1080|720|480)(?=p|i)",
-                                                            release.title,
-                                                            regex.I,
-                                                        )
-                                                        if quality:
-                                                            quality = int(
-                                                                quality.group()
-                                                            )
-                                                        else:
-                                                            quality = 0
-                                                        season_releases[index] = quality
+                                                        if (
+                                                            season_releases[index] == None
+                                                            or release_quality > season_releases[index]
+                                                        ):
+                                                            season_releases[index] = release_quality
                                                         break
                             # if there are eligible multi-season packs
                             if len(multi_season_releases) > 0:
@@ -2224,16 +2273,11 @@ class media:
                                 # if all seasons of the show could also be downloaded as single-season packs, compare the quality of the best ranking multi season pack with the lowest quality of the single season packs.
                                 if not download_multi_season_release:
                                     season_quality = min(season_releases)
-                                    quality = regex.search(
-                                        "(2160|1080|720|480)(?=p|i)",
-                                        multi_season_releases[0].title,
-                                        regex.I,
+                                    multi_quality = max(
+                                        self._title_quality(r.title)
+                                        for r in multi_season_releases
                                     )
-                                    if quality:
-                                        quality = int(quality.group())
-                                    else:
-                                        quality = 0
-                                    if quality >= season_quality:
+                                    if multi_quality >= season_quality:
                                         download_multi_season_release = True
                                 # if either not all seasons can be downloaded as single-season packs or the single season packs are of equal or lower quality compared to the multi-season packs, download the multi season packs.
                                 if download_multi_season_release:
@@ -2245,24 +2289,59 @@ class media:
                                             if self.isanime():
                                                 self.Seasons = []
                                             else:
-                                                for season in self.Seasons[:]:
-                                                    for episode in season.Episodes[:]:
-                                                        for file in self.Releases[
-                                                            0
-                                                        ].files:
-                                                            if hasattr(file, "match"):
-                                                                if (
-                                                                    file.match
-                                                                    == episode.files()[
-                                                                        0
-                                                                    ]
-                                                                ):
-                                                                    season.Episodes.remove(
-                                                                        episode
-                                                                    )
-                                                                    break
-                                                    if len(season.Episodes) == 0:
-                                                        self.Seasons.remove(season)
+                                                chosen_release = (
+                                                    self.Releases[0]
+                                                    if self.Releases
+                                                    else None
+                                                )
+                                                if (
+                                                    chosen_release
+                                                    and self._is_multi_season_title(
+                                                        chosen_release.title
+                                                    )
+                                                ):
+                                                    covered = (
+                                                        self._covered_seasons_from_title(
+                                                            chosen_release.title
+                                                        )
+                                                    )
+                                                    if covered is None:
+                                                        ui_print(
+                                                            "[MULTI_PACK] Complete pack detected; skipping per-season downloads",
+                                                            ui_settings.debug,
+                                                        )
+                                                        self.Seasons = []
+                                                    elif covered:
+                                                        before = len(self.Seasons)
+                                                        self.Seasons = [
+                                                            s
+                                                            for s in self.Seasons
+                                                            if s.index not in covered
+                                                        ]
+                                                        if len(self.Seasons) != before:
+                                                            ui_print(
+                                                                "[MULTI_PACK] Multi-season range detected; removing covered seasons",
+                                                                ui_settings.debug,
+                                                            )
+                                                if len(self.Seasons) > 0:
+                                                    for season in self.Seasons[:]:
+                                                        for episode in season.Episodes[:]:
+                                                            for file in self.Releases[
+                                                                0
+                                                            ].files:
+                                                                if hasattr(file, "match"):
+                                                                    if (
+                                                                        file.match
+                                                                        == episode.files()[
+                                                                            0
+                                                                        ]
+                                                                    ):
+                                                                        season.Episodes.remove(
+                                                                            episode
+                                                                        )
+                                                                        break
+                                                        if len(season.Episodes) == 0:
+                                                            self.Seasons.remove(season)
                     # Download all remaining seasons by starting a thread for each season.
                     results = [None] * len(self.Seasons)
                     threads = []
@@ -2298,32 +2377,11 @@ class media:
                         self.watchlist.autoremove == "both"
                         or self.watchlist.autoremove == "show"
                     ):
-                        ended = self.hasended()
-                        ended_source = getattr(self, "ended_source", "unknown")
-                        if ended:
-                            (
-                                show_complete,
-                                local_count,
-                                expected_count,
-                                expected_source,
-                            ) = self.show_complete(library)
-                        else:
-                            show_complete = False
-                            local_count = None
-                            expected_count = None
-                            expected_source = None
-                        if ended and show_complete:
-                            # Clear show from in_progress since it's complete
-                            show_key = self.show_key()
-                            if show_key and show_key in media.show_in_progress:
-                                del media.show_in_progress[show_key]
-                                ui_print(f"[SHOW_IN_PROGRESS] Show complete; cleared from in_progress", ui_settings.debug)
-                            self.watchlist.remove([], self)
-                        else:
-                            ui_print(
-                                f"[SHOW_AUTOREMOVE] skipped: ended={ended} source={ended_source} complete={show_complete} local={local_count} expected={expected_count} expected_source={expected_source}",
-                                ui_settings.debug,
-                            )
+                        post_refresh_autoremove = True
+                        post_refresh_autoremove_ended = self.hasended()
+                        post_refresh_autoremove_source = getattr(
+                            self, "ended_source", "unknown"
+                        )
                     toc = time.perf_counter()
                     ui_print("took " + str(round(toc - tic, 2)) + "s")
         elif self.type == "season":
@@ -2462,6 +2520,7 @@ class media:
                                 + "|nyaa"
                                 + "|".join(self.alternate_titles)
                                 + ")",
+                                ids=media_ids,
                             )
                             if (
                                 len(self.Releases) < 20
@@ -2478,6 +2537,7 @@ class media:
                                     + "|nyaa"
                                     + "|".join(self.alternate_titles)
                                     + ")",
+                                    ids=media_ids,
                                 )
                                 imdb_scraped = True
                             if len(self.Releases) > 0:
@@ -2494,6 +2554,7 @@ class media:
                                 + "|"
                                 + imdbID
                                 + ")",
+                                ids=media_ids,
                             )
                             if (
                                 len(self.Releases) < 20
@@ -2508,6 +2569,7 @@ class media:
                                     + "|"
                                     + imdbID
                                     + ")",
+                                    ids=media_ids,
                                 )
                                 imdb_scraped = True
                             ui_print(f"[SEASON_SCRAPING] Found {len(self.Releases)} releases so far")
@@ -2735,6 +2797,7 @@ class media:
                             + ")?(nyaa"
                             + "|".join(self.alternate_titles)
                             + ")?",
+                            ids=media_ids,
                         )
                         if len(self.Releases) > 0:
                             break
@@ -2748,11 +2811,13 @@ class media:
                             new_releases = scraper.scrape(
                                 query.replace(".", " "),
                                 self.deviation() + "(" + imdbID + ")?",
+                                ids=media_ids,
                             )
                         else:
                             new_releases = scraper.scrape(
                                 query,
                                 self.deviation() + "(" + imdbID + ")?",
+                                ids=media_ids,
                             )
 
                         ui_print(f"[EPISODE_DOWNLOAD] Scraping returned {len(new_releases)} releases")
@@ -2776,6 +2841,61 @@ class media:
                 ui_print(f"[EPISODE_DOWNLOAD] Skipping individual scraping (downloaded={debrid_downloaded} or has skip_scraping)")
             return debrid_downloaded, retry
         self.collect(refresh_)
+        if post_refresh_autoremove:
+            ended = post_refresh_autoremove_ended
+            ended_source = post_refresh_autoremove_source
+            if ended:
+                fresh_library = library
+                services = []
+                if refresh_:
+                    try:
+                        from content import classes as classes_module
+
+                        services = classes_module.library()
+                    except Exception as e:
+                        ui_print(
+                            f"[SHOW_AUTOREMOVE] library refresh failed: {e}",
+                            ui_settings.debug,
+                        )
+                attempts = 3 if refresh_ and services else 1
+                delay = 5
+                for attempt in range(attempts):
+                    if refresh_ and services:
+                        fresh_library = services[0]()
+                    (
+                        show_complete,
+                        local_count,
+                        expected_count,
+                        expected_source,
+                    ) = self.show_complete(fresh_library)
+                    if show_complete or local_count is not None:
+                        break
+                    if attempt < attempts - 1:
+                        ui_print(
+                            f"[SHOW_AUTOREMOVE] waiting {delay}s for Plex to index",
+                            ui_settings.debug,
+                        )
+                        time.sleep(delay)
+                        delay = min(delay * 2, 30)
+            else:
+                show_complete = False
+                local_count = None
+                expected_count = None
+                expected_source = None
+            if ended and show_complete:
+                show_key = self.show_key()
+                if show_key and show_key in media.show_in_progress:
+                    del media.show_in_progress[show_key]
+                    ui_print(
+                        "[SHOW_IN_PROGRESS] Show complete; cleared from in_progress",
+                        ui_settings.debug,
+                    )
+                self.watchlist.remove([], self)
+            else:
+                ui_print(
+                    f"[SHOW_AUTOREMOVE] skipped: ended={ended} source={ended_source} complete={show_complete} local={local_count} expected={expected_count} expected_source={expected_source}",
+                    ui_settings.debug,
+                )
 
     def downloaded(self):
         global imdb_scraped
@@ -2976,6 +3096,60 @@ class media:
         has_season = regex.search(r'\.S\d{1,2}\.', title, regex.I) or regex.search(r'\.S\d{1,2}$', title, regex.I)
         has_episode = regex.search(r'S\d{1,2}E\d{1,2}', title, regex.I)
         return has_season and not has_episode
+
+    def _title_quality(self, title):
+        match = regex.search(r"(2160|1080|720|480)(?=p|i)", title, regex.I)
+        if match:
+            return int(match.group())
+        return 0
+
+    def _is_single_season_title(self, title):
+        if self._is_season_pack_release(title):
+            return True
+        if regex.search(r"\bseason\W*\d+\b", title, regex.I):
+            if regex.search(r"\bseason\W*\d+\W*\d+\b", title, regex.I):
+                return False
+            return True
+        return False
+
+    def _is_multi_season_title(self, title):
+        if regex.search(r"\bS\d{1,2}(?:\W|_)+S?\d{1,2}\b", title, regex.I):
+            return True
+        if regex.search(r"\bS\d{1,2}S\d{1,2}\b", title, regex.I):
+            return True
+        if regex.search(r"\bseasons?\W*\d+\W*\d+\b", title, regex.I):
+            return True
+        if regex.search(r"\b(complete|integrale)\b", title, regex.I):
+            return not self._is_single_season_title(title)
+        return False
+
+    def _covered_seasons_from_title(self, title):
+        if regex.search(r"\b(complete|integrale)\b", title, regex.I):
+            return None
+        match = regex.search(
+            r"\bS(\d{1,2})(?:\W|_)+S?(\d{1,2})\b", title, regex.I
+        )
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            if start > end:
+                start, end = end, start
+            return set(range(start, end + 1))
+        match = regex.search(r"\bS(\d{1,2})S(\d{1,2})\b", title, regex.I)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            if start > end:
+                start, end = end, start
+            return set(range(start, end + 1))
+        match = regex.search(r"\bseasons?\W*(\d{1,2})\W*(\d{1,2})\b", title, regex.I)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            if start > end:
+                start, end = end, start
+            return set(range(start, end + 1))
+        return set()
 
     def season_pack(self, releases):
         ui_print(f"[SEASON_PACK_CHECK] Entering season_pack() with {len(self.Releases)} self.Releases and {len(releases)} parent releases")

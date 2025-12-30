@@ -5,7 +5,7 @@ import inspect
 #import child modules
 from scraper import services
 
-def scrape(query, altquery="(.*)", required_seasons=None):
+def scrape(query, altquery="(.*)", required_seasons=None, ids=None):
     """
     Scrape for releases.
     
@@ -13,6 +13,7 @@ def scrape(query, altquery="(.*)", required_seasons=None):
         query: Search query
         altquery: Alternative query pattern for filtering
         required_seasons: Optional list of season numbers for early-stop optimization (prowlarr only)
+        ids: Optional dict of ids (imdb/tmdb/tvdb) for exact match filtering
     """
     ui_print('done')
     scrapers = services.sequential()
@@ -29,7 +30,10 @@ def scrape(query, altquery="(.*)", required_seasons=None):
         results = [None] * len(sequence)
         threads = []
         for index, scraper_ in enumerate(sequence):
-            t = Thread(target=multi_scrape, args=(scraper_, query, altquery, results, index, required_seasons))
+            t = Thread(
+                target=multi_scrape,
+                args=(scraper_, query, altquery, results, index, required_seasons, ids),
+            )
             threads.append(t)
             try:
                 t.start()
@@ -78,12 +82,17 @@ def traditional():
     return False
 
 # Multiprocessing scrape method
-def multi_scrape(cls, query, altquery, result, index, required_seasons=None):
-    # Check if this scraper's scrape() function accepts required_seasons parameter
+def multi_scrape(cls, query, altquery, result, index, required_seasons=None, ids=None):
+    # Check if this scraper's scrape() function accepts optional parameters
     try:
         sig = inspect.signature(cls.scrape)
-        if 'required_seasons' in sig.parameters:
-            result[index] = cls.scrape(query, altquery, required_seasons=required_seasons)
+        kwargs = {}
+        if "required_seasons" in sig.parameters:
+            kwargs["required_seasons"] = required_seasons
+        if "ids" in sig.parameters:
+            kwargs["ids"] = ids
+        if kwargs:
+            result[index] = cls.scrape(query, altquery, **kwargs)
         else:
             result[index] = cls.scrape(query, altquery)
     except Exception:

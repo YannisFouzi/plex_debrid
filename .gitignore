@@ -401,5 +401,4 @@ settings.json
 release_policy.json
 log_film.txt
 tmdb_status_cache.json
-*.txt
 *.json
