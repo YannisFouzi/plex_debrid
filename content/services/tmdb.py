@@ -371,6 +371,7 @@ def get_alt_titles(media):
         _add(title)
 
     latin_re = regex.compile(r"^[A-Za-z0-9 ._:'\-]+$")
+    romaji_candidates = []
 
     for t, lang in titles:
         if not t:
@@ -387,12 +388,19 @@ def get_alt_titles(media):
             _add(t)
             continue
 
-        # Romanisation / alias latin pour les ?uvres japonaises
-        if original_lang == "ja" and latin_re.match(t):
-            _add(t)
-            continue
+        # Romanisation / alias latin pour les oeuvres japonaises (une seule candidate)
+        if original_lang == "ja" and latin_re.match(t) and lang in ("ja", "jp", ""):
+            romaji_candidates.append(t)
+
+    if original_lang == "ja":
+        for cand in romaji_candidates:
+            norm = _norm(cand)
+            if norm and norm not in seen_norm:
+                _add(cand)
+                break
 
     return filtered
+
 
 def get_show_status(media, allow_fallback_search=True):
     if not api_key:
