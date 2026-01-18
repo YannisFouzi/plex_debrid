@@ -107,7 +107,12 @@ def _result_has_ids(result):
 def _normalize_tokens(text):
     if text is None:
         return []
-    normalized = regex.sub(r"[^A-Za-z0-9]+", ".", str(text).lower())
+    import unicodedata
+
+    # Fold accents (Château -> Chateau) so matching works on id-less VF titles
+    folded = unicodedata.normalize("NFKD", str(text))
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    normalized = regex.sub(r"[^A-Za-z0-9]+", ".", folded.lower())
     normalized = regex.sub(r"\.+", ".", normalized).strip(".")
     return normalized.split(".") if normalized else []
 

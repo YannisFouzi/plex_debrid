@@ -389,7 +389,7 @@ def get_alt_titles(media):
             continue
 
         # Romanisation / alias latin pour les oeuvres japonaises (une seule candidate)
-        if original_lang == "ja" and latin_re.match(t) and lang in ("ja", "jp", ""):
+        if original_lang == "ja" and latin_re.match(t):
             romaji_candidates.append(t)
 
     if original_lang == "ja":
