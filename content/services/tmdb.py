@@ -387,12 +387,9 @@ def get_alt_titles(media):
             _add(t)
             continue
 
-        # Romanisation pour les titres japonais (1 seul titre latin)
-        if original_lang == "ja" and latin_re.match(t):
-            if lang in ("ja", "jp", ""):
-                romaji_primary.append(t)
-            else:
-                romaji_fallback.append(t)
+        # Romanisation pour les titres japonais : on ne retient qu'une version latine issue d'une entrée JA
+        if original_lang == "ja" and latin_re.match(t) and lang in ("ja", "jp", ""):
+            romaji_primary.append(t)
 
     if original_lang == "ja":
         for cand in romaji_primary + romaji_fallback:
