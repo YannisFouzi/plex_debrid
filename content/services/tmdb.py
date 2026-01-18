@@ -364,42 +364,35 @@ def get_alt_titles(media):
             seen_norm.add(norm)
             filtered.append(val)
 
+    # Garder la VO et le titre courant comme base
     if original_title:
         _add(original_title)
+    if title:
+        _add(title)
 
-    base_norm = _norm(title)
     latin_re = regex.compile(r"^[A-Za-z0-9 ._:'\-]+$")
-    romaji_primary = []
-    romaji_fallback = []
 
     for t, lang in titles:
         if not t:
             continue
         lang = (lang or "").lower()
 
-        # Garder la VO (variante traduite dans la langue originale)
+        # VO explicite
         if original_lang and lang == original_lang:
             _add(t)
             continue
 
-        # Garder la version FR
+        # Version FR
         if lang == "fr":
             _add(t)
             continue
 
-        # Romanisation pour les titres japonais : on ne retient qu'une version latine issue d'une entrée JA
-        if original_lang == "ja" and latin_re.match(t) and lang in ("ja", "jp", ""):
-            romaji_primary.append(t)
-
-    if original_lang == "ja":
-        for cand in romaji_primary + romaji_fallback:
-            norm = _norm(cand)
-            if norm and norm != base_norm and norm not in seen_norm:
-                _add(cand)
-                break
+        # Romanisation / alias latin pour les ?uvres japonaises
+        if original_lang == "ja" and latin_re.match(t):
+            _add(t)
+            continue
 
     return filtered
-
 
 def get_show_status(media, allow_fallback_search=True):
     if not api_key:
