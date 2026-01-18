@@ -692,7 +692,7 @@ class media:
                 for alt in tmdb_alt_titles:
                     alt_clean = releases.rename(alt)
                     if alt_clean and alt_clean not in self.alternate_titles:
-                        self.alternate_titles.insert(0, alt_clean)
+                        self.alternate_titles.append(alt_clean)
                         added.append(alt_clean)
                 if added:
                     ui_print(f"[TMDB] Added alt titles: {added} for '{self.title}'", ui_settings.debug)

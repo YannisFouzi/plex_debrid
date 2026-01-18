@@ -251,7 +251,7 @@ def get_original_title(media):
 
 def get_alt_titles(media):
     """
-    Retourne une liste de titres alternatifs/traduits depuis TMDB (ex: titre FR, romanisation).
+    Retourne une liste de titres alternatifs/traduits depuis TMDB (ex: titre FR, VO, romaji pour JA).
     """
     titles = []
     if not api_key:
@@ -297,6 +297,24 @@ def get_alt_titles(media):
     if not tmdb_id:
         return titles
 
+    details = None
+    original_lang = None
+    original_title = None
+
+    try:
+        # Récupérer quelques détails pour connaître la langue originale
+        if tmdb_id:
+            if media_type in ["show", "season", "episode"]:
+                details = _tmdb_get(f"/tv/{tmdb_id}")
+                original_title = details.get("original_name") if details else None
+                original_lang = details.get("original_language") if details else None
+            else:
+                details = _tmdb_get(f"/movie/{tmdb_id}")
+                original_title = details.get("original_title") if details else None
+                original_lang = details.get("original_language") if details else None
+    except Exception as e:
+        ui_print(f"[tmdb] get_alt_titles details failed for '{title}': {e}", ui_settings.debug)
+
     try:
         if media_type in ["show", "season", "episode"]:
             translations = _tmdb_get(f"/tv/{tmdb_id}/translations") or {}
@@ -304,32 +322,56 @@ def get_alt_titles(media):
             for entry in translations.get("translations", []):
                 data = entry.get("data", {}) or {}
                 t = data.get("title") or data.get("name")
+                lang = entry.get("iso_639_1")
                 if t:
-                    titles.append(t)
+                    titles.append((t, lang))
             for entry in alts.get("results", []):
                 t = entry.get("title")
+                lang = entry.get("iso_3166_1") or entry.get("iso_639_1")
                 if t:
-                    titles.append(t)
+                    titles.append((t, lang))
         else:
             translations = _tmdb_get(f"/movie/{tmdb_id}/translations") or {}
             alts = _tmdb_get(f"/movie/{tmdb_id}/alternative_titles") or {}
             for entry in translations.get("translations", []):
                 data = entry.get("data", {}) or {}
                 t = data.get("title") or data.get("name")
+                lang = entry.get("iso_639_1")
                 if t:
-                    titles.append(t)
+                    titles.append((t, lang))
             for entry in alts.get("titles", []):
                 t = entry.get("title")
+                lang = entry.get("iso_3166_1") or entry.get("iso_639_1")
                 if t:
-                    titles.append(t)
+                    titles.append((t, lang))
     except Exception as e:
         ui_print(f"[tmdb] get_alt_titles fetch failed for '{title}': {e}", ui_settings.debug)
         return titles
 
-    # Déduplication simple
+    # Filtrage : garder FR + VO + romaji (pour ja), éviter les alias exotiques
+    filtered = []
+    for t, lang in titles:
+        lang = (lang or "").lower()
+        keep = False
+        if lang == "fr":
+            keep = True
+        # Si la langue originale est japonaise, garder aussi les titres en alphabet latin (romaji/EN)
+        if original_lang == "ja":
+            try:
+                if regex.match(r"^[A-Za-z0-9 ._:'\\-]+$", t):
+                    keep = True
+            except Exception:
+                pass
+        # Toujours garder le titre original si présent
+        if original_title and t and t.strip().lower() == str(original_title).strip().lower():
+            keep = True
+        if keep and t not in filtered:
+            filtered.append(t)
+
+    # Déduplication simple sur les titres retenus
     seen = set()
     unique = []
-    for t in titles:
+    for t in filtered:
         if not t:
             continue
         key = t.strip().lower()
