@@ -249,9 +249,12 @@ def get_original_title(media):
         return None
 
 
+
+
 def get_alt_titles(media):
     """
     Retourne une liste de titres alternatifs/traduits depuis TMDB (ex: titre FR, VO, romaji pour JA).
+    On limite aux alias utiles (VO, FR, et romanisation japonaise) pour éviter le bruit.
     """
     titles = []
     if not api_key:
@@ -348,37 +351,57 @@ def get_alt_titles(media):
         ui_print(f"[tmdb] get_alt_titles fetch failed for '{title}': {e}", ui_settings.debug)
         return titles
 
-    # Filtrage : garder FR + VO + romaji (pour ja), éviter les alias exotiques
-    filtered = []
-    for t, lang in titles:
-        lang = (lang or "").lower()
-        keep = False
-        if lang == "fr":
-            keep = True
-        # Si la langue originale est japonaise, garder aussi les titres en alphabet latin (romaji/EN)
-        if original_lang == "ja":
-            try:
-                if regex.match(r"^[A-Za-z0-9 ._:'\\-]+$", t):
-                    keep = True
-            except Exception:
-                pass
-        # Toujours garder le titre original si présent
-        if original_title and t and t.strip().lower() == str(original_title).strip().lower():
-            keep = True
-        if keep and t not in filtered:
-            filtered.append(t)
+    # Filtrage : VO + FR + romanisation (si VO = JA). Pas d'empilement d'alias exotiques.
+    def _norm(val: str) -> str:
+        return regex.sub(r"[^a-z0-9]+", "", str(val).lower())
 
-    # Déduplication simple sur les titres retenus
-    seen = set()
-    unique = []
-    for t in filtered:
+    filtered = []
+    seen_norm = set()
+
+    def _add(val: str):
+        norm = _norm(val)
+        if norm and norm not in seen_norm:
+            seen_norm.add(norm)
+            filtered.append(val)
+
+    if original_title:
+        _add(original_title)
+
+    base_norm = _norm(title)
+    latin_re = regex.compile(r"^[A-Za-z0-9 ._:'\-]+$")
+    romaji_primary = []
+    romaji_fallback = []
+
+    for t, lang in titles:
         if not t:
             continue
-        key = t.strip().lower()
-        if key and key not in seen:
-            seen.add(key)
-            unique.append(t)
-    return unique
+        lang = (lang or "").lower()
+
+        # Garder la VO (variante traduite dans la langue originale)
+        if original_lang and lang == original_lang:
+            _add(t)
+            continue
+
+        # Garder la version FR
+        if lang == "fr":
+            _add(t)
+            continue
+
+        # Romanisation pour les titres japonais (1 seul titre latin)
+        if original_lang == "ja" and latin_re.match(t):
+            if lang in ("ja", "jp", ""):
+                romaji_primary.append(t)
+            else:
+                romaji_fallback.append(t)
+
+    if original_lang == "ja":
+        for cand in romaji_primary + romaji_fallback:
+            norm = _norm(cand)
+            if norm and norm != base_norm and norm not in seen_norm:
+                _add(cand)
+                break
+
+    return filtered
 
 
 def get_show_status(media, allow_fallback_search=True):
