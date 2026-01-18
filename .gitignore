@@ -397,7 +397,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
-settings.json
+
 release_policy.json
 log_film.txt
 tmdb_status_cache.json
