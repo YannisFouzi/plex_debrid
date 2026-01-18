@@ -161,9 +161,9 @@ def _passes_title_guard(query, altquery, title):
 
 def _passes_loose_guard(query, altquery, title):
     """
-    More permissive check for id-less releases:
-    - allow if title contains the query year
-    - or any query/altquery token appears anywhere in the title
+    Stricter check for id-less releases:
+    - require the release title to contain the query year (if present)
+    - AND contain at least one token from the query or altquery
     """
     title_tokens = _normalize_tokens(title)
     query_tokens, query_year = _extract_query_tokens(query)
@@ -176,16 +176,14 @@ def _passes_loose_guard(query, altquery, title):
         except Exception:
             alt_tokens = []
 
-    if query_year and query_year in title_tokens:
-        return True
-
+    year_ok = bool(query_year and query_year in title_tokens)
+    token_match = False
     if query_tokens and any(tok in title_tokens for tok in query_tokens):
-        return True
-
+        token_match = True
     if alt_tokens and any(tok in title_tokens for tok in alt_tokens):
-        return True
+        token_match = True
 
-    return False
+    return year_ok and token_match
 
 def _matches_target_ids(result, target_ids):
     imdb_id = target_ids.get("imdb")
@@ -399,11 +397,11 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                 result.title = result.title.replace(':', '').replace("'", '')
                 result.title = regex.sub(r'\.+', ".", result.title)
                 if not _result_has_ids(result):
-                    if not _passes_title_guard(query, altquery, result.title):
-                        if not _passes_loose_guard(query, altquery, result.title):
-                            response.remove(result)
-                            guard_filtered += 1
-                            continue
+                    # Id-less: require strict guard OR (year+token) loose guard
+                    if not _passes_title_guard(query, altquery, result.title) and not _passes_loose_guard(query, altquery, result.title):
+                        response.remove(result)
+                        guard_filtered += 1
+                        continue
                 alt_match = regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I)
                 if alt_match and result.protocol == 'torrent':
                     if hasattr(result, 'magnetUrl'):
