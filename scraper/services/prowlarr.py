@@ -19,6 +19,11 @@ resolver_retry_delay = 1
 filter_low_quality = True  # Filter out 720p and below before resolving
 
 _LEADING_ARTICLES = {"the", "a", "an", "le", "la", "les", "un", "une"}
+_STOPWORDS = {
+    "of", "the", "and", "or", "a", "an",
+    "le", "la", "les", "de", "des", "du", "d",
+    "un", "une", "et", "en",
+}
 _ALLOWED_EXTRAS = {
     "4k", "2160", "2160p", "1080", "1080p", "720", "720p", "480", "480p",
     "uhd", "hdr", "hdr10", "hdr10plus", "dv", "dovi", "dolby", "vision",
@@ -163,27 +168,49 @@ def _passes_loose_guard(query, altquery, title):
     """
     Stricter check for id-less releases:
     - require the release title to contain the query year (if present)
-    - AND contain at least one token from the query or altquery
+    - AND contain either:
+      * a full alias substring (query/altquery normalized), or
+      * at least one "strong" token (len>=4, not a stopword) from the alias list
     """
     title_tokens = _normalize_tokens(title)
     query_tokens, query_year = _extract_query_tokens(query)
 
     # Extract simple tokens from altquery (strip regex noise)
     alt_tokens = []
+    alt_aliases = []
     if altquery and altquery != "(.*)":
         try:
-            alt_tokens = _normalize_tokens(regex.sub(r'[^A-Za-z0-9]+', '.', altquery))
+            cleaned = regex.sub(r'[^A-Za-z0-9|]+', '.', altquery)
+            alt_tokens = _normalize_tokens(cleaned)
+            alt_aliases = [
+                part for part in regex.sub(r'\.+', '.', cleaned).split('|')
+                if (part := part.strip('.')) and regex.search(r'[a-z]', part, regex.I)
+            ]
         except Exception:
             alt_tokens = []
+            alt_aliases = []
 
     year_ok = bool(query_year and query_year in title_tokens)
-    token_match = False
-    if query_tokens and any(tok in title_tokens for tok in query_tokens):
-        token_match = True
-    if alt_tokens and any(tok in title_tokens for tok in alt_tokens):
-        token_match = True
+    if not year_ok:
+        return False
 
-    return year_ok and token_match
+    # Build alias strings to test substring match
+    alias_strings = []
+    if query_tokens:
+        alias_strings.append(".".join(query_tokens))
+    alias_strings.extend(alt_aliases)
+    norm_title_str = ".".join(title_tokens)
+    full_alias_match = any(alias and alias in norm_title_str for alias in alias_strings)
+
+    # Build strong tokens (length >=4, not a stopword)
+    all_tokens = set(query_tokens + alt_tokens)
+    strong_tokens = [
+        tok for tok in all_tokens
+        if len(tok) >= 4 and tok not in _STOPWORDS and regex.search(r'[a-z]', tok, regex.I)
+    ]
+    strong_token_match = any(tok in title_tokens for tok in strong_tokens)
+
+    return full_alias_match or strong_token_match
 
 def _matches_target_ids(result, target_ids):
     imdb_id = target_ids.get("imdb")
