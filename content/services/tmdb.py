@@ -249,6 +249,96 @@ def get_original_title(media):
         return None
 
 
+def get_alt_titles(media):
+    """
+    Retourne une liste de titres alternatifs/traduits depuis TMDB (ex: titre FR, romanisation).
+    """
+    titles = []
+    if not api_key:
+        return titles
+
+    eids = getattr(media, "EID", [])
+    ids = _extract_ids(eids)
+    title = getattr(media, "title", "")
+    year = getattr(media, "year", None)
+    media_type = getattr(media, "type", "movie")
+
+    tmdb_id = ids.get("tmdb")
+    try:
+        # Résolution de l'ID TMDB
+        if not tmdb_id and ids.get("imdb"):
+            find = _tmdb_find(ids["imdb"], "imdb_id")
+            results_key = "tv_results" if media_type in ["show", "season", "episode"] else "movie_results"
+            results = find.get(results_key, [])
+            if results:
+                tmdb_id = str(results[0].get("id"))
+        if not tmdb_id and ids.get("tvdb") and media_type in ["show", "season", "episode"]:
+            find = _tmdb_find(ids["tvdb"], "tvdb_id")
+            tv_results = find.get("tv_results", [])
+            if tv_results:
+                tmdb_id = str(tv_results[0].get("id"))
+        if not tmdb_id and title:
+            if media_type in ["show", "season", "episode"]:
+                search = _tmdb_search_show(title, year)
+                result = _pick_tmdb_result(search.get("results", []), str(title).lower(), year)
+            else:
+                params = {"query": title}
+                if year:
+                    params["year"] = str(year)
+                search = _tmdb_get("/search/movie", params=params)
+                results = search.get("results", []) if search else []
+                result = results[0] if results else None
+            if result:
+                tmdb_id = str(result.get("id"))
+    except Exception as e:
+        ui_print(f"[tmdb] get_alt_titles lookup failed for '{title}': {e}", ui_settings.debug)
+        return titles
+
+    if not tmdb_id:
+        return titles
+
+    try:
+        if media_type in ["show", "season", "episode"]:
+            translations = _tmdb_get(f"/tv/{tmdb_id}/translations") or {}
+            alts = _tmdb_get(f"/tv/{tmdb_id}/alternative_titles") or {}
+            for entry in translations.get("translations", []):
+                data = entry.get("data", {}) or {}
+                t = data.get("title") or data.get("name")
+                if t:
+                    titles.append(t)
+            for entry in alts.get("results", []):
+                t = entry.get("title")
+                if t:
+                    titles.append(t)
+        else:
+            translations = _tmdb_get(f"/movie/{tmdb_id}/translations") or {}
+            alts = _tmdb_get(f"/movie/{tmdb_id}/alternative_titles") or {}
+            for entry in translations.get("translations", []):
+                data = entry.get("data", {}) or {}
+                t = data.get("title") or data.get("name")
+                if t:
+                    titles.append(t)
+            for entry in alts.get("titles", []):
+                t = entry.get("title")
+                if t:
+                    titles.append(t)
+    except Exception as e:
+        ui_print(f"[tmdb] get_alt_titles fetch failed for '{title}': {e}", ui_settings.debug)
+        return titles
+
+    # Déduplication simple
+    seen = set()
+    unique = []
+    for t in titles:
+        if not t:
+            continue
+        key = t.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(t)
+    return unique
+
+
 def get_show_status(media, allow_fallback_search=True):
     if not api_key:
         return None

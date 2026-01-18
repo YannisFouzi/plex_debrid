@@ -404,7 +404,8 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                             response.remove(result)
                             guard_filtered += 1
                             continue
-                if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I) and result.protocol == 'torrent':
+                alt_match = regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I)
+                if alt_match and result.protocol == 'torrent':
                     if hasattr(result, 'magnetUrl'):
                         if not result.magnetUrl == None:
                             if not result.indexer == None and not result.size == None:
@@ -418,7 +419,9 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                                     releases.release('[prowlarr: unnamed]', 'torrent', result.title, [],float(result.size) / 1000000000, [result.magnetUrl],seeders=result.seeders)]
                             response.remove(result)
                 else:
-                    response.remove(result)
+                    # If id-less and passed loose guard, keep for resolver; otherwise drop
+                    if _result_has_ids(result) or not _passes_loose_guard(query, altquery, result.title):
+                        response.remove(result)
             if guard_filtered:
                 _debug(f"[prowlarr][title-guard] filtered {guard_filtered} id-less releases")
             if len(response) > max_results:

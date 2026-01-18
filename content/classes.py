@@ -685,6 +685,20 @@ class media:
             except Exception as e:
                 ui_print(f"[TMDB] Could not get original title: {e}", ui_settings.debug)
 
+            # TMDB: Récupérer les titres alternatifs/traductions (FR, romaji, etc.)
+            try:
+                tmdb_alt_titles = sys.modules["content.services.tmdb"].get_alt_titles(self) or []
+                added = []
+                for alt in tmdb_alt_titles:
+                    alt_clean = releases.rename(alt)
+                    if alt_clean and alt_clean not in self.alternate_titles:
+                        self.alternate_titles.insert(0, alt_clean)
+                        added.append(alt_clean)
+                if added:
+                    ui_print(f"[TMDB] Added alt titles: {added} for '{self.title}'", ui_settings.debug)
+            except Exception as e:
+                ui_print(f"[TMDB] Could not get alt titles: {e}", ui_settings.debug)
+
             # Generate variant with "1" replaced by "i" for titles like "PLUR1BUS" -> "pluribus"
             # Only replace "1" when it's in the MIDDLE of a word (surrounded by letters)
             # This avoids breaking titles like "F1" where "1" is at the end
