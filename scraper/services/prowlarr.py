@@ -182,10 +182,11 @@ def _passes_loose_guard(query, altquery, title):
         try:
             cleaned = regex.sub(r'[^A-Za-z0-9|]+', '.', altquery)
             alt_tokens = _normalize_tokens(cleaned)
-            alt_aliases = [
-                part for part in regex.sub(r'\.+', '.', cleaned).split('|')
-                if (part := part.strip('.')) and regex.search(r'[a-z]', part, regex.I)
-            ]
+            alt_aliases = []
+            for raw in regex.sub(r'\.+', '.', cleaned).split('|'):
+                trimmed = raw.strip('.')
+                if trimmed and regex.search(r'[a-z]', trimmed, regex.I):
+                    alt_aliases.append(trimmed)
         except Exception:
             alt_tokens = []
             alt_aliases = []
