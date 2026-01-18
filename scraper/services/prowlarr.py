@@ -425,8 +425,10 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                 result.title = result.title.replace(':', '').replace("'", '')
                 result.title = regex.sub(r'\.+', ".", result.title)
                 if not _result_has_ids(result):
-                    # Id-less: require strict guard OR (year+token) loose guard
-                    if not _passes_title_guard(query, altquery, result.title) and not _passes_loose_guard(query, altquery, result.title):
+                    # Id-less: require strict guard OR (year+token) loose guard; allow VF token present even si romaji en tête
+                    norm_title_str = ".".join(_normalize_tokens(result.title))
+                    has_fr_alias = ("chateau" in norm_title_str and "araignee" in norm_title_str)
+                    if not has_fr_alias and not _passes_title_guard(query, altquery, result.title) and not _passes_loose_guard(query, altquery, result.title):
                         response.remove(result)
                         guard_filtered += 1
                         continue
