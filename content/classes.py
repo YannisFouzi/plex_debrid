@@ -1989,6 +1989,7 @@ class media:
                     imdb_scraped = False
                     for year in alternate_years:
                         i = 0
+                        found_hd_release = False
                         while len(self.Releases) == 0 and i <= retries:
                             for k, title in enumerate(self.alternate_titles):
                                 self.Releases += scraper.scrape(
@@ -2011,10 +2012,14 @@ class media:
                                         imdbID, "(.*|" + imdbID + ")", ids=media_ids
                                     )
                                     imdb_scraped = True
-                                if len(self.Releases) > 0:
+                                if len(self.Releases) > 0 and release_policy._has_1080_plus(self.Releases):
+                                    found_hd_release = True
                                     break
+                            # if we only found low-quality releases, keep trying other titles/years
+                            if not found_hd_release and len(self.Releases) > 0:
+                                self.Releases = []
                             i += 1
-                        if not len(self.Releases) == 0:
+                        if found_hd_release and not len(self.Releases) == 0:
                             self.year = year
                             break
                     self.Releases, _policy = release_policy.apply_release_policy(
