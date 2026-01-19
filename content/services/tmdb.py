@@ -1,4 +1,5 @@
 from base import requests, json, time, regex, os
+import unicodedata
 import ui.ui_print as ui_print_module
 from ui.ui_print import ui_print, ui_settings
 
@@ -353,7 +354,16 @@ def get_alt_titles(media):
 
     # Filtrage : VO + FR + romanisation (si VO = JA). Pas d'empilement d'alias exotiques.
     def _norm(val: str) -> str:
-        return regex.sub(r"[^a-z0-9]+", "", str(val).lower())
+        folded = unicodedata.normalize("NFKD", str(val))
+        folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+        return regex.sub(r"[^a-z0-9]+", "", folded.lower())
+
+    def _clean_alias(val: str) -> str:
+        folded = unicodedata.normalize("NFKD", str(val))
+        folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+        cleaned = regex.sub(r"[^a-z0-9]+", ".", folded.lower())
+        cleaned = regex.sub(r"\.+", ".", cleaned).strip(".")
+        return cleaned
 
     filtered = []
     seen_norm = set()
@@ -363,6 +373,11 @@ def get_alt_titles(media):
         if norm and norm not in seen_norm:
             seen_norm.add(norm)
             filtered.append(val)
+        cleaned = _clean_alias(val)
+        if cleaned and cleaned not in seen_norm:
+            seen_norm.add(cleaned)
+            # keep the cleaned (accent-folded / punct-normalized) alias as well
+            filtered.append(cleaned)
 
     # Garder la VO et le titre courant comme base
     if original_title:
