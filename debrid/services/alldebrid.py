@@ -70,7 +70,8 @@ def download(element, stream=True, query='', force=False):
         query = element.deviation()
     for release in cached[:]:
         # if release matches query
-        if regex.match(r'(' + query + ')', release.title, regex.I) or force:
+        # use search so alternate titles found anywhere in the name (e.g. VO prefix + VF suffix)
+        if regex.search(r'(' + query + ')', release.title, regex.I) or force:
             debrid_uncached = True
             for i, rule in enumerate(element.version.rules):
                 if rule[0] == "cache status" and rule[1] in ['requirement', 'preference'] and rule[2] == "cached":
