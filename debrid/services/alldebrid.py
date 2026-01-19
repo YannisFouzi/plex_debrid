@@ -65,13 +65,29 @@ def post(url, data):
 
 # (required) Download Function.
 def download(element, stream=True, query='', force=False):
+    # Helper: remove diacritics so VF titles with accents still match ASCII queries
+    def strip_accents(value: str) -> str:
+        try:
+            import unicodedata
+            return ''.join(
+                ch for ch in unicodedata.normalize('NFD', value)
+                if unicodedata.category(ch) != 'Mn'
+            )
+        except Exception:
+            return value
+
     cached = element.Releases
     if query == '':
         query = element.deviation()
     for release in cached[:]:
         # if release matches query
         # use search so alternate titles found anywhere in the name (e.g. VO prefix + VF suffix)
-        if regex.search(r'(' + query + ')', release.title, regex.I) or force:
+        # also try accent-stripped title to match VF titles with diacritics
+        if (
+            regex.search(r'(' + query + ')', release.title, regex.I)
+            or regex.search(r'(' + query + ')', strip_accents(release.title), regex.I)
+            or force
+        ):
             debrid_uncached = True
             for i, rule in enumerate(element.version.rules):
                 if rule[0] == "cache status" and rule[1] in ['requirement', 'preference'] and rule[2] == "cached":
