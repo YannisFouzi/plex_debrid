@@ -63,6 +63,23 @@ def post(url, data):
         response = None
     return response
 
+# Upload .torrent file (preferred over magnet for faster peer discovery)
+def post_torrent_file(torrent_bytes):
+    url = 'https://api.alldebrid.com/v4/magnet/upload/file?agent=plex_debrid'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36',
+        'authorization': 'Bearer ' + api_key}
+    files = {'files[0]': ('release.torrent', torrent_bytes, 'application/x-bittorrent')}
+    try:
+        ui_print("[alldebrid] (post): uploading .torrent file", debug=ui_settings.debug)
+        response = session.post(url, headers=headers, files=files)
+        logerror(response)
+        response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
+    except Exception as e:
+        ui_print("[alldebrid] error: (torrent file upload): " + str(e), debug=ui_settings.debug)
+        return None
+    return response
+
 # (required) Download Function.
 def download(element, stream=True, query='', force=False):
     # Helper: remove diacritics so VF titles with accents still match ASCII queries
@@ -96,19 +113,29 @@ def download(element, stream=True, query='', force=False):
             if not debrid_uncached:  # Cached Download Method for AllDebrid
                 torrent_id = None
                 try:
-                    url = 'https://api.alldebrid.com/v4/magnet/upload?magnets[]=' + release.download[0]
-                    response = get(url)
-                    if not hasattr(response, "status") or response.status != "success":
-                        ui_print(f"[alldebrid] failed to add release {release.title}.")
-                        continue
-                    if not hasattr(response, "data") or not hasattr(response.data.magnets[0], "id"):
-                        ui_print(f"[alldebrid] failed to add release {release.title}.")
-                        if hasattr(response.data.magnets[0], "error"):
-                            ui_print(f"[alldebrid] error: {response.data.magnets[0].error.message}.")
-                        continue
+                    if getattr(release, 'torrent_bytes', None):
+                        response = post_torrent_file(release.torrent_bytes)
+                        if not response or not hasattr(response, "status") or response.status != "success":
+                            ui_print(f"[alldebrid] failed to add release {release.title} (file upload).")
+                            continue
+                        if not hasattr(response, "data") or not hasattr(response.data, "files") or len(response.data.files) == 0:
+                            ui_print(f"[alldebrid] failed to add release {release.title}.")
+                            continue
+                        torrent_id = response.data.files[0].id
+                    else:
+                        url = 'https://api.alldebrid.com/v4/magnet/upload?magnets[]=' + release.download[0]
+                        response = get(url)
+                        if not hasattr(response, "status") or response.status != "success":
+                            ui_print(f"[alldebrid] failed to add release {release.title}.")
+                            continue
+                        if not hasattr(response, "data") or not hasattr(response.data.magnets[0], "id"):
+                            ui_print(f"[alldebrid] failed to add release {release.title}.")
+                            if hasattr(response.data.magnets[0], "error"):
+                                ui_print(f"[alldebrid] error: {response.data.magnets[0].error.message}.")
+                            continue
+                        torrent_id = response.data.magnets[0].id
 
                     # check if release is instantly available
-                    torrent_id = response.data.magnets[0].id
                     url = 'https://api.alldebrid.com/v4.1/magnet/status?id=' + str(torrent_id)
                     response = get(url)
                     if response.status != "success" or response.data.magnets.status != "Ready":
@@ -138,9 +165,12 @@ def download(element, stream=True, query='', force=False):
                         get('https://api.alldebrid.com/v4/magnet/delete?id=' + str(torrent_id))
             else:
                 # Uncached Download Method for AllDebrid
-                url = 'https://api.alldebrid.com/v4/magnet/upload?magnets[]=' + release.download[0]
-                response = get(url)
-                if not hasattr(response, "status") or response.status != "success":
+                if getattr(release, 'torrent_bytes', None):
+                    response = post_torrent_file(release.torrent_bytes)
+                else:
+                    url = 'https://api.alldebrid.com/v4/magnet/upload?magnets[]=' + release.download[0]
+                    response = get(url)
+                if not response or not hasattr(response, "status") or response.status != "success":
                     ui_print(f"[alldebrid] failed to add release {release.title}.")
                     continue
                 ui_print('[alldebrid] adding uncached release: ' + release.title)

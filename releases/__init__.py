@@ -136,6 +136,14 @@ class release:
         except:
             pass
 
+        # torrent_bytes: prefer non-empty when merging
+        try:
+            other_tb = getattr(other, 'torrent_bytes', None)
+            if other_tb and not getattr(self, 'torrent_bytes', None):
+                self.torrent_bytes = other_tb
+        except:
+            pass
+
         # cached, maybe_cached: merge unique strings
         try:
             self.cached = merge_unique(getattr(self, 'cached', []), getattr(other, 'cached', []))

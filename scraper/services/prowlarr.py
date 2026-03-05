@@ -296,22 +296,24 @@ def _redact_url(url):
     except Exception:
         return url
 
-def _add_release(scraped_releases, result, magnet):
+def _add_release(scraped_releases, result, magnet, torrent_bytes=None):
     if not magnet:
         _debug('[prowlarr][resolver] no magnet to add for: ' + getattr(result, 'title', '<unknown>'))
         return
     if result.indexer is not None and result.size is not None:
-        scraped_releases += [
-            releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title, [],
-                             float(result.size) / 1000000000, [magnet], seeders=result.seeders)]
+        r = releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title, [],
+                             float(result.size) / 1000000000, [magnet], seeders=result.seeders)
     elif result.indexer is not None:
-        scraped_releases += [
-            releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title, [], 1,
-                             [magnet], seeders=result.seeders)]
+        r = releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title, [], 1,
+                             [magnet], seeders=result.seeders)
     elif result.size is not None:
-        scraped_releases += [
-            releases.release('[prowlarr: unnamed]', 'torrent', result.title, [],
-                             float(result.size) / 1000000000, [magnet], seeders=result.seeders)]
+        r = releases.release('[prowlarr: unnamed]', 'torrent', result.title, [],
+                             float(result.size) / 1000000000, [magnet], seeders=result.seeders)
+    else:
+        return
+    if torrent_bytes:
+        r.torrent_bytes = torrent_bytes
+    scraped_releases += [r]
 
 def _safe_torrent_to_magnet(torrent_bytes):
     try:
@@ -562,6 +564,7 @@ def resolve(result):
                     magnet = _safe_torrent_to_magnet(redirected.content)
                     if not magnet:
                         _debug('[prowlarr][resolver] torrent->magnet conversion failed')
+                    _add_release(scraped_releases, result, magnet, torrent_bytes=redirected.content)
                 else:
                     try:
                         import html
@@ -574,7 +577,7 @@ def resolve(result):
                         _debug('[prowlarr][resolver] magnet found in redirected content')
                     else:
                         _debug('[prowlarr][resolver] no magnet found in redirected content')
-                _add_release(scraped_releases, result, magnet)
+                    _add_release(scraped_releases, result, magnet)
             except:
                 _debug('[prowlarr][resolver] redirect handling failed')
                 pass
@@ -587,7 +590,7 @@ def resolve(result):
             magnet = _safe_torrent_to_magnet(link.content)
             if not magnet:
                 _debug('[prowlarr][resolver] torrent->magnet conversion failed (direct)')
-            _add_release(scraped_releases, result, magnet)
+            _add_release(scraped_releases, result, magnet, torrent_bytes=link.content)
             return scraped_releases
         else:
             try:
