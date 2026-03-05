@@ -437,7 +437,7 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                         response.remove(result)
                         guard_filtered += 1
                         continue
-                alt_match = regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,regex.I)
+                alt_match = regex.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', result.title,regex.I)
                 if alt_match and result.protocol == 'torrent':
                     if hasattr(result, 'magnetUrl'):
                         if not result.magnetUrl == None:

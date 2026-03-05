@@ -747,7 +747,7 @@ class media:
                     title = releases.rename(self.parentTitle)
                 elif self.type == "episode":
                     title = releases.rename(self.grandparentTitle)
-            title = title.replace("[", "\[").replace("]", "\]")
+            title = title.replace("[", r"\[").replace("]", r"\]")
             if self.type == "movie":
                 if regex.search(
                     str(self.year),
@@ -757,11 +757,11 @@ class media:
                 ):
                     title = title.replace("." + str(self.year), "")
                     if year != "":
-                        return "(.*?)(" + title + ":?.*)\(?\[?(" + str(year) + ")?"
+                        return r"(.*?)(" + title + r":?.*)\(?\[?(" + str(year) + ")?"
                     return (
-                        "(.*?)("
+                        r"(.*?)("
                         + title
-                        + ":?.*)\(?\[?("
+                        + r":?.*)\(?\[?("
                         + str(self.year)
                         + "|"
                         + str(self.year - 1)
@@ -777,9 +777,9 @@ class media:
                 return (
                     "(.*?)("
                     + title
-                    + ":?.)(series.|[^A-Za-z0-9]+)?((\(?"
+                    + r":?.)(series.|[^A-Za-z0-9]+)?((\(?"
                     + str(self.year)
-                    + "\)?.)|(complete.)|(INTEGRALE?.)|(INTÉGRALE?.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))"
+                    + r"\)?.)|(complete.)|(INTEGRALE?.)|(INTÉGRALE?.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))"
                 )
             elif self.type == "season":
                 title = title.replace("." + str(self.parentYear), "")
@@ -788,9 +788,9 @@ class media:
                 return (
                     "(.*?)("
                     + title
-                    + ":?.)(series.|[^A-Za-z0-9]+)?(\(?"
+                    + r":?.)(series.|[^A-Za-z0-9]+)?(\(?"
                     + str(self.parentYear)
-                    + "\)?.)?(season."
+                    + r"\)?.)?(season."
                     + season_num
                     + "[^0-9]|season."
                     + season_02d
@@ -822,9 +822,9 @@ class media:
                     return (
                         "(.*?)("
                         + title
-                        + ":?.)(series.)?(\(?"
+                        + r":?.)(series.)?(\(?"
                         + str(self.grandparentYear)
-                        + "\)?.)?(S"
+                        + r"\)?.)?(S"
                         + str("{:02d}".format(self.parentIndex))
                         + "E"
                         + str("{:02d}".format(self.index))
@@ -836,9 +836,9 @@ class media:
                     return (
                         "(.*?)("
                         + title
-                        + ":?.)(series.)?(\(?"
+                        + r":?.)(series.)?(\(?"
                         + str(self.grandparentYear)
-                        + "\)?.)?(S"
+                        + r"\)?.)?(S"
                         + str("{:02d}".format(self.parentIndex))
                         + "E"
                         + str("{:02d}".format(self.index))
@@ -856,7 +856,7 @@ class media:
                     title = releases.rename(self.parentTitle)
                 elif self.type == "episode":
                     title = releases.rename(self.grandparentTitle)
-            title = title.replace("[", "\[").replace("]", "\]")
+            title = title.replace("[", r"\[").replace("]", r"\]")
             if self.type == "movie":
                 title = title.replace("." + str(self.year), "")
                 return (
@@ -975,15 +975,15 @@ class media:
                 return (
                     "(.*?)("
                     + title
-                    + ")(.*?)((?<!part)[^0-9A-RT-Z\[]0*("
+                    + r")(.*?)((?<!part)[^0-9A-RT-Z\[]0*("
                     + str(self.parentIndex)
                     + "|"
                     + roman
-                    + ")[^0-9A-DF-Z\[]0*"
+                    + r")[^0-9A-DF-Z\[]0*"
                     + str(self.index)
-                    + "(?![A-Z0-9]|\])|(?<!part)[^0-9A-Z\[]0*"
+                    + r"(?![A-Z0-9]|\])|(?<!part)[^0-9A-Z\[]0*"
                     + self.anime_count
-                    + "(?![A-Z0-9]|\]))"
+                    + r"(?![A-Z0-9]|\]))"
                 )
 
     def isanime(self):
@@ -3061,11 +3061,11 @@ class media:
         elif self.type == "episode":
             if self.isanime():
                 files += [
-                    "[^A-DF-Z0-9\[]0*("
+                    r"[^A-DF-Z0-9\[]0*("
                     + self.anime_count
                     + "|"
                     + str(self.index)
-                    + ")(?![A-Z0-9]|\])"
+                    + r")(?![A-Z0-9]|\])"
                 ]
             else:
                 files += [

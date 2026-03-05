@@ -49,7 +49,7 @@ def scrape(query, altquery):
                         size = size_bytes / (1024 * 1024 * 1024)
                         seeders = int(torrent.get('seeders', 0))
 
-                        if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title, regex.I):
+                        if regex.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', title, regex.I):
                             scraped_releases += [releases.release('[thepiratebay]', 'torrent', title, [], size, [download], seeders=seeders)]
                             ui_print(f"[thepiratebay] Scraped release: title={title}, size={size:.2f} GB, seeders={seeders}", ui_settings.debug)
             else:

@@ -42,7 +42,7 @@ def scrape(query, altquery):
                         title = re.sub(r'[^\w\s\.\-]', '', title)  # Remove non-alphanumeric characters except for dots, spaces, and hyphens
                         title = title.replace(" ", '.')
                         title = re.sub(r'\.+', ".", title)
-                        if re.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title, re.I):
+                        if re.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', title, re.I):
                             magnet_element = torrent.select_one('a[href^="magnet"]')
                             download = magnet_element['href'] if magnet_element else '#'
                             size_element = torrent.select_one('div.tgxtablecell[style*="right"] span.badge')

@@ -43,7 +43,7 @@ def scrape(query, altquery):
                         title = title.replace(" ", '.')
                         title = regex.sub(r'\.+', ".", title)
                         ui_print("[eztv] Processing torrent: " + title, ui_settings.debug)
-                        if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title, regex.I):
+                        if regex.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', title, regex.I):
                             link = torrent['href']
                             ui_print("[eztv] Sending GET request for torrent details: " + link, ui_settings.debug)
                             request = urllib.request.Request(base_url + link, headers=headers)

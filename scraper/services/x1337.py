@@ -45,7 +45,7 @@ def scrape(query, altquery):
                         title = re.sub(r'[^\w\s\.\-]', '', title)
                         title = title.replace(" ", '.')
                         title = re.sub(r'\.+', ".", title)
-                        if re.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title, re.I):
+                        if re.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', title, re.I):
                             link = torrent['href']
                             request = urllib.request.Request(base_url + link, headers=headers)
                             response = session.open(request)
