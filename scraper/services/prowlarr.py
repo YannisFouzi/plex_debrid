@@ -393,6 +393,7 @@ def scrape(query, altquery, required_seasons=None, ids=None):
             ('offset', 0),
         ] + [('categories', cat_id) for cat_id in category_filter_ids]
         headers = {'X-Api-Key': api_key}
+        _debug(f'[prowlarr][api] requesting url={base_url}/api/v1/search query="{query}" categories={category_filter_ids}')
         try:
             response = session.get(url, headers=headers, params=params, timeout=60)
         except requests.exceptions.Timeout:
@@ -401,13 +402,43 @@ def scrape(query, altquery, required_seasons=None, ids=None):
         except :
             ui_print('[prowlarr] error: prowlarr couldnt be reached. Make sure your prowlarr base url is correctly formatted (default: http://prowlarr:9696).')
             return []
+        _debug(f'[prowlarr][api] response status={response.status_code} content_length={len(response.content)}')
         if response.status_code == 200:
             try:
                 response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
             except:
                 ui_print('[prowlarr] error: prowlarr didnt return any data.')
                 return []
+            _debug(f'[prowlarr][api] raw JSON returned {len(response)} results')
+            if len(response) > 0:
+                for i, r in enumerate(response[:5]):
+                    title = getattr(r, 'title', '<no title>')
+                    protocol = getattr(r, 'protocol', '<no protocol>')
+                    cats = getattr(r, 'categories', [])
+                    cat_ids = []
+                    for c in (cats or []):
+                        cat_id = getattr(c, 'id', None)
+                        if cat_id is not None:
+                            cat_ids.append(str(cat_id))
+                    has_magnet = hasattr(r, 'magnetUrl') and r.magnetUrl is not None
+                    has_download = hasattr(r, 'downloadUrl') and r.downloadUrl is not None
+                    indexer = getattr(r, 'indexer', '<unknown>')
+                    _debug(f'[prowlarr][api] result[{i}] title="{title}" protocol={protocol} cats=[{",".join(cat_ids)}] indexer={indexer} hasMagnet={has_magnet} hasDownload={has_download}')
+            # Filter by category
+            before_cat_filter = len(response)
             response = [result for result in response if is_movies_or_tv(result)]
+            after_cat_filter = len(response)
+            _debug(f'[prowlarr][cat-filter] {before_cat_filter} -> {after_cat_filter} after is_movies_or_tv() (filtered {before_cat_filter - after_cat_filter})')
+            if before_cat_filter > 0 and after_cat_filter == 0:
+                _debug('[prowlarr][cat-filter] ALL results filtered! Dumping first 3 category structures:')
+                # Re-parse to show what categories looked like
+                try:
+                    raw_again = json.loads(session.get(url, headers=headers, params=params, timeout=60).content, object_hook=lambda d: SimpleNamespace(**d))
+                    for i, r in enumerate(raw_again[:3]):
+                        cats = getattr(r, 'categories', None)
+                        _debug(f'[prowlarr][cat-filter] result[{i}] categories={cats}')
+                except:
+                    _debug('[prowlarr][cat-filter] could not re-fetch for category dump')
             target_ids = _normalize_ids(ids)
             if any(target_ids.values()):
                 has_any_id = any(_result_has_ids(r) for r in response)
@@ -426,37 +457,77 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                             return []
                 else:
                     _debug("[prowlarr][id-filter] no ids on results; skipping id filter")
+            _debug(f'[prowlarr][filter-loop] starting filter loop with {len(response)} results, altquery="{altquery[:120]}"')
             guard_filtered = 0
+            alt_matched = 0
+            alt_not_matched = 0
+            magnet_added = 0
+            no_magnet = 0
+            dropped_no_alt = 0
+            kept_for_resolver = 0
             for result in response[:]:
                 result.title = result.title.replace(' ', '.')
                 result.title = result.title.replace(':', '').replace("'", '')
                 result.title = regex.sub(r'\.+', ".", result.title)
-                if not _result_has_ids(result):
+                has_ids = _result_has_ids(result)
+                if not has_ids:
                     # Id-less: require strict guard OR (year+token) loose guard; allow VF token present even si romaji en tête
                     norm_title_str = ".".join(_normalize_tokens(result.title))
                     has_fr_alias = ("chateau" in norm_title_str and "araignee" in norm_title_str)
-                    if not has_fr_alias and not _passes_title_guard(query, altquery, result.title) and not _passes_loose_guard(query, altquery, result.title):
+                    title_guard_ok = _passes_title_guard(query, altquery, result.title)
+                    loose_guard_ok = _passes_loose_guard(query, altquery, result.title)
+                    if not has_fr_alias and not title_guard_ok and not loose_guard_ok:
+                        _debug(f'[prowlarr][guard-reject] title="{result.title}" title_guard={title_guard_ok} loose_guard={loose_guard_ok}')
                         response.remove(result)
                         guard_filtered += 1
                         continue
-                alt_match = regex.match(r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')', result.title,regex.I)
-                if alt_match and result.protocol == 'torrent':
-                    if hasattr(result, 'magnetUrl'):
-                        if not result.magnetUrl == None:
-                            if not result.indexer == None and not result.size == None:
-                                scraped_releases += [
-                                    releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title,[], float(result.size) / 1000000000, [result.magnetUrl],seeders=result.seeders)]
-                            elif not result.indexer == None:
-                                scraped_releases += [
-                                    releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title,[], 1, [result.magnetUrl], seeders=result.seeders)]
-                            elif not result.size == None:
-                                scraped_releases += [
-                                    releases.release('[prowlarr: unnamed]', 'torrent', result.title, [],float(result.size) / 1000000000, [result.magnetUrl],seeders=result.seeders)]
-                            response.remove(result)
+                    else:
+                        _debug(f'[prowlarr][guard-pass] title="{result.title}" title_guard={title_guard_ok} loose_guard={loose_guard_ok} fr_alias={has_fr_alias}')
                 else:
-                    # If id-less and passed loose guard, keep for resolver; otherwise drop
-                    if _result_has_ids(result) or not _passes_loose_guard(query, altquery, result.title):
+                    _debug(f'[prowlarr][guard-skip] title="{result.title}" has_ids=True')
+                try:
+                    alt_regex_str = r'(' + altquery.replace('.', r'\.').replace(r"\.*", ".*") + ')'
+                    alt_match = regex.match(alt_regex_str, result.title, regex.I)
+                except Exception as e:
+                    _debug(f'[prowlarr][alt-regex-error] regex failed: {e} pattern="{alt_regex_str[:200]}"')
+                    alt_match = None
+                protocol = getattr(result, 'protocol', '<none>')
+                _debug(f'[prowlarr][alt-match] title="{result.title}" alt_match={bool(alt_match)} protocol={protocol}')
+                if alt_match and protocol == 'torrent':
+                    alt_matched += 1
+                    has_magnet_url = hasattr(result, 'magnetUrl') and result.magnetUrl is not None
+                    has_indexer = result.indexer is not None
+                    has_size = result.size is not None
+                    _debug(f'[prowlarr][alt-match-detail] hasMagnetUrl={has_magnet_url} hasIndexer={has_indexer} hasSize={has_size} magnetUrl={str(getattr(result, "magnetUrl", None))[:80]}')
+                    if has_magnet_url:
+                        if has_indexer and has_size:
+                            scraped_releases += [
+                                releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title,[], float(result.size) / 1000000000, [result.magnetUrl],seeders=result.seeders)]
+                            magnet_added += 1
+                        elif has_indexer:
+                            scraped_releases += [
+                                releases.release('[prowlarr: ' + str(result.indexer) + ']', 'torrent', result.title,[], 1, [result.magnetUrl], seeders=result.seeders)]
+                            magnet_added += 1
+                        elif has_size:
+                            scraped_releases += [
+                                releases.release('[prowlarr: unnamed]', 'torrent', result.title, [],float(result.size) / 1000000000, [result.magnetUrl],seeders=result.seeders)]
+                            magnet_added += 1
                         response.remove(result)
+                    else:
+                        no_magnet += 1
+                        _debug(f'[prowlarr][no-magnet] title="{result.title}" -> kept in response for resolver')
+                else:
+                    alt_not_matched += 1
+                    # If id-less and passed loose guard, keep for resolver; otherwise drop
+                    if has_ids or not _passes_loose_guard(query, altquery, result.title):
+                        _debug(f'[prowlarr][drop-no-alt] title="{result.title}" has_ids={has_ids} loose_guard={_passes_loose_guard(query, altquery, result.title)}')
+                        response.remove(result)
+                        dropped_no_alt += 1
+                    else:
+                        kept_for_resolver += 1
+                        _debug(f'[prowlarr][keep-loose] title="{result.title}" kept for resolver (loose guard passed)')
+            _debug(f'[prowlarr][filter-summary] guard_filtered={guard_filtered} alt_matched={alt_matched} alt_not_matched={alt_not_matched} magnet_added={magnet_added} no_magnet={no_magnet} dropped_no_alt={dropped_no_alt} kept_for_resolver={kept_for_resolver}')
+            _debug(f'[prowlarr][filter-summary] scraped_releases so far={len(scraped_releases)} remaining in response={len(response)}')
             if guard_filtered:
                 _debug(f"[prowlarr][title-guard] filtered {guard_filtered} id-less releases")
             if len(response) > max_results:
@@ -514,6 +585,103 @@ def scrape(query, altquery, required_seasons=None, ids=None):
             for result in results:
                 if not result == [] and not result == None:
                     scraped_releases += result
+        # FALLBACK: if no results and query contains an episode pattern (S##E##),
+        # retry with broader queries since some indexers don't support episode-specific
+        # text search. Queries use spaces (like the Prowlarr UI) instead of dots.
+        # A strict episode regex filters results to only keep the correct episode.
+        if len(scraped_releases) == 0:
+            ep_match = regex.search(r'(\.S(\d{2}))E(\d{2})\.$', query, regex.I)
+            if ep_match:
+                season_num = ep_match.group(2)
+                episode_num = ep_match.group(3)
+                base_title = query[:ep_match.start()].replace('.', ' ').strip()
+                season_tag = 'S' + season_num
+                # Strict regex: only accept titles containing the exact S##E## pattern
+                strict_ep_regex = regex.compile(
+                    r'S0*' + str(int(season_num)) + r'E0*' + str(int(episode_num)) + r'(?:\.|$)',
+                    regex.I
+                )
+                # Progressively broader queries, all with spaces (like Prowlarr UI):
+                # 1) "The Pitt S02E09" — episode with spaces
+                # 2) "The Pitt S02"    — season only
+                # 3) "The Pitt"        — just the title
+                fallback_queries = [
+                    base_title + ' ' + season_tag + 'E' + episode_num,
+                    base_title + ' ' + season_tag,
+                    base_title,
+                ]
+                for fb_idx, fallback_query in enumerate(fallback_queries):
+                    if len(scraped_releases) > 0:
+                        break
+                    _debug(f'[prowlarr][fallback] attempt {fb_idx+1}: trying query "{fallback_query}"')
+                    fallback_params = [
+                        ('query', fallback_query),
+                        ('type', 'search'),
+                        ('limit', max_results),
+                        ('offset', 0),
+                    ] + [('categories', cat_id) for cat_id in category_filter_ids]
+                    try:
+                        fb_response = session.get(url, headers=headers, params=fallback_params, timeout=60)
+                    except:
+                        _debug('[prowlarr][fallback] request failed')
+                        continue
+                    _debug(f'[prowlarr][fallback] response status={fb_response.status_code} content_length={len(fb_response.content)}')
+                    if fb_response.status_code != 200:
+                        continue
+                    try:
+                        fb_results = json.loads(fb_response.content, object_hook=lambda d: SimpleNamespace(**d))
+                    except:
+                        _debug('[prowlarr][fallback] JSON parse failed')
+                        continue
+                    _debug(f'[prowlarr][fallback] raw JSON returned {len(fb_results)} results')
+                    fb_results = [r for r in fb_results if is_movies_or_tv(r)]
+                    _debug(f'[prowlarr][fallback] {len(fb_results)} after category filter')
+                    # Filter: only keep results matching the exact episode
+                    accepted = []
+                    for result in fb_results:
+                        result.title = result.title.replace(' ', '.')
+                        result.title = result.title.replace(':', '').replace("'", '')
+                        result.title = regex.sub(r'\.+', ".", result.title)
+                        if not strict_ep_regex.search(result.title):
+                            _debug(f'[prowlarr][fallback] rejected: "{result.title}" (need S{season_num}E{episode_num})')
+                            continue
+                        _debug(f'[prowlarr][fallback] accepted: "{result.title}"')
+                        accepted.append(result)
+                    fb_results = accepted
+                    if not fb_results:
+                        _debug(f'[prowlarr][fallback] no results matched S{season_num}E{episode_num}, trying next query')
+                        continue
+                    # Separate magnet vs needs-resolving
+                    for result in fb_results[:]:
+                        protocol = getattr(result, 'protocol', '<none>')
+                        if protocol == 'torrent':
+                            has_magnet_url = hasattr(result, 'magnetUrl') and result.magnetUrl is not None
+                            if has_magnet_url:
+                                _add_release(scraped_releases, result, result.magnetUrl)
+                                fb_results.remove(result)
+                    # Filter low quality
+                    if filter_low_quality:
+                        fb_results = [r for r in fb_results if not _is_low_quality(getattr(r, 'title', ''))]
+                    # Resolve remaining (no magnet)
+                    if len(fb_results) > max_resolve:
+                        fb_results = fb_results[:max_resolve]
+                    _debug(f'[prowlarr][fallback] resolving {len(fb_results)} releases')
+                    fb_resolve_results = [None] * len(fb_results)
+                    threads = []
+                    for index, result in enumerate(fb_results):
+                        t = Thread(target=multi_init, args=(resolve, result, fb_resolve_results, index))
+                        threads.append(t)
+                        t.start()
+                        if len(threads) >= resolver_concurrency:
+                            for t in threads:
+                                t.join()
+                            threads = []
+                    for t in threads:
+                        t.join()
+                    for result in fb_resolve_results:
+                        if not result == [] and not result == None:
+                            scraped_releases += result
+                    _debug(f'[prowlarr][fallback] total scraped after fallback: {len(scraped_releases)}')
     return scraped_releases
 
 def resolve(result):
