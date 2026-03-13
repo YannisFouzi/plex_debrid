@@ -601,15 +601,27 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                     r'S0*' + str(int(season_num)) + r'E0*' + str(int(episode_num)) + r'(?:\.|$)',
                     regex.I
                 )
-                # Progressively broader queries, all with spaces (like Prowlarr UI):
-                # 1) "The Pitt S02E09" — episode with spaces
-                # 2) "The Pitt S02"    — season only
-                # 3) "The Pitt"        — just the title
+                # Strip leading article if present (e.g. "the pitt" -> "pitt")
+                # Some indexers (e.g. C411) don't handle articles in API search
+                base_words = base_title.split()
+                if base_words and base_words[0].lower() in _LEADING_ARTICLES and len(base_words) > 1:
+                    no_article_title = ' '.join(base_words[1:])
+                else:
+                    no_article_title = None
+                # Progressively broader queries:
+                # 1) "The Pitt S02E09" — full title + episode
+                # 2) "The Pitt S02"    — full title + season
+                # 3) "The Pitt"        — full title only
+                # 4) "Pitt S02"        — no article + season (if article was present)
+                # 5) "Pitt"            — no article only (if article was present)
                 fallback_queries = [
                     base_title + ' ' + season_tag + 'E' + episode_num,
                     base_title + ' ' + season_tag,
                     base_title,
                 ]
+                if no_article_title:
+                    fallback_queries.append(no_article_title + ' ' + season_tag)
+                    fallback_queries.append(no_article_title)
                 for fb_idx, fallback_query in enumerate(fallback_queries):
                     if len(scraped_releases) > 0:
                         break
