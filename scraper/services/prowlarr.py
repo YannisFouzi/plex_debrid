@@ -18,6 +18,40 @@ resolver_retry_delay = 1
 # Optimization settings
 filter_low_quality = True  # Filter out 720p and below before resolving
 
+# Fallback negative cache: avoid spamming indexers when episode isn't available yet
+# Key: base_title (e.g. "pitt"), Value: {"ts": timestamp, "fails": consecutive_fail_count}
+_fallback_cache = {}
+_FALLBACK_BASE_DELAY = 60       # 1 minute initial cooldown
+_FALLBACK_MAX_DELAY = 600       # 10 minutes max cooldown
+
+def _fallback_should_skip(cache_key):
+    """Check if we should skip fallback for this query (cooldown not expired)."""
+    if cache_key not in _fallback_cache:
+        return False
+    entry = _fallback_cache[cache_key]
+    delay = min(_FALLBACK_BASE_DELAY * (2 ** (entry["fails"] - 1)), _FALLBACK_MAX_DELAY)
+    elapsed = time.time() - entry["ts"]
+    if elapsed < delay:
+        _debug(f'[prowlarr][fallback] skipping "{cache_key}" (cooldown {int(delay - elapsed)}s remaining, fails={entry["fails"]})')
+        return True
+    return False
+
+def _fallback_record_fail(cache_key):
+    """Record a failed fallback attempt (all queries returned 0 for this episode)."""
+    if cache_key in _fallback_cache:
+        _fallback_cache[cache_key]["fails"] += 1
+        _fallback_cache[cache_key]["ts"] = time.time()
+    else:
+        _fallback_cache[cache_key] = {"ts": time.time(), "fails": 1}
+    entry = _fallback_cache[cache_key]
+    delay = min(_FALLBACK_BASE_DELAY * (2 ** (entry["fails"] - 1)), _FALLBACK_MAX_DELAY)
+    _debug(f'[prowlarr][fallback] recorded fail for "{cache_key}" (fails={entry["fails"]}, next retry in {int(delay)}s)')
+
+def _fallback_record_success(cache_key):
+    """Clear cooldown on success."""
+    if cache_key in _fallback_cache:
+        del _fallback_cache[cache_key]
+
 _LEADING_ARTICLES = {"the", "a", "an", "le", "la", "les", "un", "une"}
 _STOPWORDS = {
     "of", "the", "and", "or", "a", "an",
@@ -596,6 +630,9 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                 episode_num = ep_match.group(3)
                 base_title = query[:ep_match.start()].replace('.', ' ').strip()
                 season_tag = 'S' + season_num
+                cache_key = base_title.lower() + ' S' + season_num + 'E' + episode_num
+                if _fallback_should_skip(cache_key):
+                    return scraped_releases
                 # Strict regex: only accept titles containing the exact S##E## pattern
                 strict_ep_regex = regex.compile(
                     r'S0*' + str(int(season_num)) + r'E0*' + str(int(episode_num)) + r'(?:\.|$)',
@@ -694,6 +731,10 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                         if not result == [] and not result == None:
                             scraped_releases += result
                     _debug(f'[prowlarr][fallback] total scraped after fallback: {len(scraped_releases)}')
+                if len(scraped_releases) > 0:
+                    _fallback_record_success(cache_key)
+                else:
+                    _fallback_record_fail(cache_key)
     return scraped_releases
 
 def resolve(result):
