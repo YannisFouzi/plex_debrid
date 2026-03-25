@@ -18,6 +18,22 @@ resolver_retry_delay = 1
 # Optimization settings
 filter_low_quality = True  # Filter out 720p and below before resolving
 
+# Global rate limiter: prevent API bursts that trigger 429 on indexers like C411
+_RATE_LIMIT_DELAY = 5  # seconds between consecutive Prowlarr API requests
+_last_request_time = 0
+
+def _rate_limited_get(url, headers, params, timeout):
+    """Wrapper around session.get that enforces a minimum delay between API calls."""
+    global _last_request_time
+    now = time.time()
+    elapsed = now - _last_request_time
+    if elapsed < _RATE_LIMIT_DELAY:
+        wait = _RATE_LIMIT_DELAY - elapsed
+        _debug(f'[prowlarr][rate-limit] waiting {wait:.1f}s before next API call')
+        time.sleep(wait)
+    _last_request_time = time.time()
+    return session.get(url, headers=headers, params=params, timeout=timeout)
+
 # Fallback negative cache: avoid spamming indexers when episode isn't available yet
 # Key: base_title (e.g. "pitt"), Value: {"ts": timestamp, "fails": consecutive_fail_count}
 _fallback_cache = {}
@@ -429,7 +445,7 @@ def scrape(query, altquery, required_seasons=None, ids=None):
         headers = {'X-Api-Key': api_key}
         _debug(f'[prowlarr][api] requesting url={base_url}/api/v1/search query="{query}" categories={category_filter_ids}')
         try:
-            response = session.get(url, headers=headers, params=params, timeout=60)
+            response = _rate_limited_get(url, headers, params, timeout=60)
         except requests.exceptions.Timeout:
             ui_print('[prowlarr] error: prowlarr request timed out. Reduce the number of prowlarr indexers or make sure they are healthy.')
             return []
@@ -464,15 +480,7 @@ def scrape(query, altquery, required_seasons=None, ids=None):
             after_cat_filter = len(response)
             _debug(f'[prowlarr][cat-filter] {before_cat_filter} -> {after_cat_filter} after is_movies_or_tv() (filtered {before_cat_filter - after_cat_filter})')
             if before_cat_filter > 0 and after_cat_filter == 0:
-                _debug('[prowlarr][cat-filter] ALL results filtered! Dumping first 3 category structures:')
-                # Re-parse to show what categories looked like
-                try:
-                    raw_again = json.loads(session.get(url, headers=headers, params=params, timeout=60).content, object_hook=lambda d: SimpleNamespace(**d))
-                    for i, r in enumerate(raw_again[:3]):
-                        cats = getattr(r, 'categories', None)
-                        _debug(f'[prowlarr][cat-filter] result[{i}] categories={cats}')
-                except:
-                    _debug('[prowlarr][cat-filter] could not re-fetch for category dump')
+                _debug('[prowlarr][cat-filter] ALL results filtered! (no re-fetch to avoid wasting API calls)')
             target_ids = _normalize_ids(ids)
             if any(target_ids.values()):
                 has_any_id = any(_result_has_ids(r) for r in response)
@@ -670,7 +678,7 @@ def scrape(query, altquery, required_seasons=None, ids=None):
                         ('offset', 0),
                     ] + [('categories', cat_id) for cat_id in category_filter_ids]
                     try:
-                        fb_response = session.get(url, headers=headers, params=fallback_params, timeout=60)
+                        fb_response = _rate_limited_get(url, headers, fallback_params, timeout=60)
                     except:
                         _debug('[prowlarr][fallback] request failed')
                         continue
