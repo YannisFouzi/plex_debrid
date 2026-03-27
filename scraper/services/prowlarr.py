@@ -1,5 +1,6 @@
 #import modules
 from base import *
+from threading import Lock
 from ui.ui_print import *
 import releases
 
@@ -21,18 +22,20 @@ filter_low_quality = True  # Filter out 720p and below before resolving
 # Global rate limiter: prevent API bursts that trigger 429 on indexers like C411
 _RATE_LIMIT_DELAY = 5  # seconds between consecutive Prowlarr API requests
 _last_request_time = 0
+_rate_limit_lock = Lock()
 
 def _rate_limited_get(url, headers, params, timeout):
     """Wrapper around session.get that enforces a minimum delay between API calls."""
     global _last_request_time
-    now = time.time()
-    elapsed = now - _last_request_time
-    if elapsed < _RATE_LIMIT_DELAY:
-        wait = _RATE_LIMIT_DELAY - elapsed
-        _debug(f'[prowlarr][rate-limit] waiting {wait:.1f}s before next API call')
-        time.sleep(wait)
-    _last_request_time = time.time()
-    return session.get(url, headers=headers, params=params, timeout=timeout)
+    with _rate_limit_lock:
+        now = time.time()
+        elapsed = now - _last_request_time
+        if elapsed < _RATE_LIMIT_DELAY:
+            wait = _RATE_LIMIT_DELAY - elapsed
+            _debug(f'[prowlarr][rate-limit] waiting {wait:.1f}s before next API call')
+            time.sleep(wait)
+        _last_request_time = time.time()
+        return session.get(url, headers=headers, params=params, timeout=timeout)
 
 # Fallback negative cache: avoid spamming indexers when episode isn't available yet
 # Key: base_title (e.g. "pitt"), Value: {"ts": timestamp, "fails": consecutive_fail_count}
