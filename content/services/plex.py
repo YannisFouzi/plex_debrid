@@ -954,28 +954,43 @@ class library(classes.library):
         except:
             ui_print("[plex error]: couldnt reach local plex server at: " + library.url + " to determine library sections. Make sure the address is correct, the server is running, and youve set up at least one library.")
         if len(sections) == 0:
+            if len(current_library) > 0:
+                ui_print("[plex] server unreachable — using cached library to prevent false re-downloads")
+                return current_library
             return list_
         if not silent:
             ui_print('[plex] getting plex library section/s "' + '","'.join(names) + '" ...')
+        section_fetch_errors = False
         for section,types in sections:
             if section == '':
                 continue
             section_response = []
             section_title = ''
+            section_had_error = False
             for type in types:
                 url = library.url + '/library/sections/' + section + '/all?type=' + type + '&X-Plex-Token=' + users[0][1]
                 response = get(session, url)
-                if hasattr(response, 'MediaContainer'):
+                if response is None:
+                    section_had_error = True
+                elif hasattr(response, 'MediaContainer'):
                     if hasattr(response.MediaContainer, 'Metadata'):
                         for element in response.MediaContainer.Metadata:
                             section_response += [classes.media(element)]
                     if hasattr(response.MediaContainer, 'librarySectionTitle'):
                         section_title = response.MediaContainer.librarySectionTitle
+            if section_had_error:
+                section_fetch_errors = True
+                ui_print(f"[plex error]: failed to fetch library section [{section}]: {section_title} (network error, keeping cached data)")
+                continue
             if len(section_response) == 0:
                 ui_print(f"[plex error]: local plex library section [{section}]: {section_title} at server address: {library.url} is empty!")
                 continue
             else:
                 list_ += section_response
+        if section_fetch_errors and len(current_library) > 0:
+            ui_print("[plex] network error fetching one or more sections — using cached library to prevent false re-downloads")
+            ui_print('done')
+            return current_library
         if len(list_) == 0:
             ui_print("[plex error]: No library items were found.")
         shows = {}
