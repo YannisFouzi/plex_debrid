@@ -7,8 +7,19 @@ tracker = []
 downloading = []
 uncached = 'true'
 
+def _call_service_download(service, element, stream=True, query='', force=False, cache_mode=None):
+    if cache_mode is not None and getattr(service, "short", None) == "AD":
+        return service.download(
+            element,
+            stream=stream,
+            query=query,
+            force=force,
+            cache_mode=cache_mode,
+        )
+    return service.download(element, stream=stream, query=query, force=force)
+
 # Download Method:
-def download(element, stream=True, query='', force=False):
+def download(element, stream=True, query='', force=False, cache_mode=None):
     downloaded_files = []
     if stream:
         cached_releases = copy.deepcopy(element.Releases)
@@ -21,7 +32,14 @@ def download(element, stream=True, query='', force=False):
                         release.cached = s
             for service in services.get():
                 if service.short in release.cached + release.maybe_cached:
-                    if service.download(element, stream=stream, query=query, force=force):
+                    if _call_service_download(
+                        service,
+                        element,
+                        stream=stream,
+                        query=query,
+                        force=force,
+                        cache_mode=cache_mode,
+                    ):
                         downloaded = True
                         downloaded_files += element.Releases[0].files
                         if not hasattr(element,"existing_releases"):
@@ -48,14 +66,28 @@ def download(element, stream=True, query='', force=False):
             for service in services.get():
                 if len(release.cached) > 0:
                     if service.short in release.cached + release.maybe_cached:
-                        if service.download(element, stream=stream, query=query, force=force):
+                        if _call_service_download(
+                            service,
+                            element,
+                            stream=stream,
+                            query=query,
+                            force=force,
+                            cache_mode=cache_mode,
+                        ):
                             downloaded = True
                             downloaded_files += element.Releases[0].files
                             element.existing_releases += [element.Releases[0].title]
                             element.downloaded_releases += [element.Releases[0].title]
                             break
                 else:
-                    if service.download(element, stream=stream, query=query, force=force):
+                    if _call_service_download(
+                        service,
+                        element,
+                        stream=stream,
+                        query=query,
+                        force=force,
+                        cache_mode=cache_mode,
+                    ):
                         downloaded = True
                         downloaded_files += element.Releases[0].files
                         element.existing_releases += [element.Releases[0].title]

@@ -2960,6 +2960,27 @@ class media:
             releases.print_releases(self.Releases, True)
         scraped_releases = copy.deepcopy(self.Releases)
         downloaded = []
+        active_debrid_services = debrid.services.get()
+        alldebrid_only = (
+            len(active_debrid_services) == 1
+            and getattr(active_debrid_services[0], "short", None) == "AD"
+        )
+
+        def _record_download(mark_uncached=False):
+            self.downloaded()
+            try:
+                if self.Releases:
+                    release_policy.maybe_queue_upgrade(self, self.Releases[0])
+            except Exception as e:
+                ui_print(
+                    f"[UPGRADE QUEUE] error: {e}", ui_settings.debug
+                )
+            if mark_uncached:
+                debrid.downloading += [
+                    self.query() + " [" + self.version.name + "]"
+                ]
+            downloaded += [True]
+
         if len(scraped_releases) > 0:
             if len(self.versions()) == 0:
                 ui_print(
@@ -2984,47 +3005,45 @@ class media:
                 releases.sort(self.Releases, self.version, element=self)
                 if len(self.Releases) > 0:
                     releases.print_releases(self.Releases, True)
+                sorted_releases = copy.deepcopy(self.Releases)
                 ver_dld = False
-                for release in copy.deepcopy(self.Releases):
-                    self.Releases = [
-                        release,
-                    ]
-                    if (hasattr(release, "cached") and len(release.cached) > 0) or (
-                        hasattr(release, "maybe_cached")
-                        and len(release.maybe_cached) > 0
+                if alldebrid_only and len(sorted_releases) > 0:
+                    self.Releases = copy.deepcopy(sorted_releases)
+                    if debrid.download(
+                        self,
+                        stream=True,
+                        force=force,
+                        cache_mode="cached_only",
                     ):
-                        if debrid.download(self, stream=True, force=force):
-                            self.downloaded()
-                            try:
-                                if self.Releases:
-                                    release_policy.maybe_queue_upgrade(
-                                        self, self.Releases[0]
-                                    )
-                            except Exception as e:
-                                ui_print(
-                                    f"[UPGRADE QUEUE] error: {e}", ui_settings.debug
-                                )
-                            downloaded += [True]
-                            ver_dld = True
-                            break
+                        _record_download()
+                        ver_dld = True
                     elif not self.type == "show" and debrid_uncached:
+                        ui_print(
+                            f"[DEBRID_DOWNLOAD] No cached AD release found for version '{version.name}', falling back to first sorted release",
+                            ui_settings.debug,
+                        )
+                        self.Releases = [copy.deepcopy(sorted_releases[0])]
                         if debrid.download(self, stream=False, force=force):
-                            self.downloaded()
-                            try:
-                                if self.Releases:
-                                    release_policy.maybe_queue_upgrade(
-                                        self, self.Releases[0]
-                                    )
-                            except Exception as e:
-                                ui_print(
-                                    f"[UPGRADE QUEUE] error: {e}", ui_settings.debug
-                                )
-                            debrid.downloading += [
-                                self.query() + " [" + self.version.name + "]"
-                            ]
-                            downloaded += [True]
+                            _record_download(mark_uncached=True)
                             ver_dld = True
-                            break
+                else:
+                    for release in copy.deepcopy(self.Releases):
+                        self.Releases = [
+                            release,
+                        ]
+                        if (hasattr(release, "cached") and len(release.cached) > 0) or (
+                            hasattr(release, "maybe_cached")
+                            and len(release.maybe_cached) > 0
+                        ):
+                            if debrid.download(self, stream=True, force=force):
+                                _record_download()
+                                ver_dld = True
+                                break
+                        elif not self.type == "show" and debrid_uncached:
+                            if debrid.download(self, stream=False, force=force):
+                                _record_download(mark_uncached=True)
+                                ver_dld = True
+                                break
                 # if a release was sent (cached or uncached), treat the version as successful and stop
                 if ver_dld:
                     if self.type == "season":

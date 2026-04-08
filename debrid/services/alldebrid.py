@@ -81,7 +81,7 @@ def post_torrent_file(torrent_bytes):
     return response
 
 # (required) Download Function.
-def download(element, stream=True, query='', force=False):
+def download(element, stream=True, query='', force=False, cache_mode=None):
     # Helper: remove diacritics so VF titles with accents still match ASCII queries
     def strip_accents(value: str) -> str:
         try:
@@ -110,6 +110,8 @@ def download(element, stream=True, query='', force=False):
                 if rule[0] == "cache status" and rule[1] in ['requirement', 'preference'] and rule[2] == "cached":
                     debrid_uncached = False
                     break
+            if cache_mode == "cached_only":
+                debrid_uncached = False
             if not debrid_uncached:  # Cached Download Method for AllDebrid
                 torrent_id = None
                 try:
