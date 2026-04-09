@@ -85,13 +85,13 @@ def _extract_ids(eids):
     for eid in eids:
         value = str(eid)
         lower = value.lower()
-        m = regex.search(r"(?:tmdb|themoviedb)://(\\d+)", lower)
+        m = regex.search(r"(?:tmdb|themoviedb)://(\d+)", lower)
         if m and not ids["tmdb"]:
             ids["tmdb"] = m.group(1)
-        m = regex.search(r"(?:tvdb|thetvdb)://(\\d+)", lower)
+        m = regex.search(r"(?:tvdb|thetvdb)://(\d+)", lower)
         if m and not ids["tvdb"]:
             ids["tvdb"] = m.group(1)
-        m = regex.search(r"imdb://(tt\\d+)", lower)
+        m = regex.search(r"imdb://(tt\d+)", lower)
         if m and not ids["imdb"]:
             ids["imdb"] = m.group(1)
     return ids
