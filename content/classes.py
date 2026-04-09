@@ -2979,7 +2979,7 @@ class media:
                 debrid.downloading += [
                     self.query() + " [" + self.version.name + "]"
                 ]
-            downloaded += [True]
+            downloaded.append(True)
 
         if len(scraped_releases) > 0:
             if len(self.versions()) == 0:
@@ -3063,7 +3063,7 @@ class media:
                             ui_print(f"[subs trigger] error: {e}", debug=ui_settings.debug)
                     return True, False
             if not ver_dld:
-                downloaded += [False]
+                downloaded.append(False)
         return True in downloaded, (False in downloaded or len(downloaded) == 0)
 
     def files(self):

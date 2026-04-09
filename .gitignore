@@ -404,3 +404,4 @@ log_film.txt
 tmdb_status_cache.json
 *.json
 *.pkl
+scripts/deploy-plex-debrid.ps1
