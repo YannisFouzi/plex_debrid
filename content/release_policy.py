@@ -4,8 +4,6 @@ import releases
 
 _STATE = None
 
-_TIMER_WINDOW_SECONDS = 2 * 24 * 60 * 60
-_OLD_MEDIA_DAYS = 365
 _UPGRADE_MAX_AGE_DAYS = 2 * 365
 _UPGRADE_CHECK_INTERVAL_SECONDS = 7 * 24 * 60 * 60
 
@@ -26,8 +24,7 @@ def _load_state():
                 state = json.load(f)
         except Exception:
             state = {}
-    if "timers" not in state:
-        state["timers"] = {}
+    state.pop("timers", None)
     if "upgrade_queue" not in state:
         state["upgrade_queue"] = {}
     _STATE = state
@@ -221,57 +218,19 @@ def apply_release_policy(media, releases):
         return releases, {"force_4k_only": False, "timer_active": False}
 
     releases = releases or []
-    age_days = media_age_days(media)
-    old_media = age_days is None or age_days > _OLD_MEDIA_DAYS
-    key = media_key(media)
-    state = _load_state()
-    dirty = False
+    media.force_retries = required_retries_for_1080(media)
+    media._force_4k_only = False
+    media._skip_watch = len(releases) == 0
 
-    if not old_media and releases and _has_1080_plus(releases):
-        if key not in state["timers"]:
-            state["timers"][key] = _now()
-            dirty = True
-            ui_print(
-                f"[4K TIMER] start for '{getattr(media, 'title', media_type)}' key={key}",
-                ui_settings.debug,
-            )
-
-    timer_start = state["timers"].get(key)
-    timer_active = False
-    if timer_start and not old_media:
-        timer_active = (_now() - int(timer_start)) < _TIMER_WINDOW_SECONDS
-
-    force_4k_only = timer_active and not old_media
-    filtered = releases
-    if force_4k_only:
-        before = len(filtered)
-        filtered = [r for r in releases if _is_4k_release(r)]
-        if before != len(filtered):
-            ui_print(
-                f"[4K TIMER] filtering to 4K-only ({before}->{len(filtered)})",
-                ui_settings.debug,
-            )
-
-    if force_4k_only:
-        media.force_retries = 0
-    else:
-        media.force_retries = required_retries_for_1080(media)
-    media._force_4k_only = force_4k_only
-    media._skip_watch = len(filtered) == 0
-
-    if dirty:
-        _save_state()
-    return filtered, {
-        "force_4k_only": force_4k_only,
-        "timer_active": timer_active,
-        "age_days": age_days,
+    return releases, {
+        "force_4k_only": False,
+        "timer_active": False,
+        "age_days": media_age_days(media),
         "skip_watch": media._skip_watch,
     }
 
 
 def filter_forced_4k(media, releases):
-    if getattr(media, "_force_4k_only", False):
-        return [r for r in (releases or []) if _is_4k_release(r)]
     return releases or []
 
 
