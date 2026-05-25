@@ -12,7 +12,7 @@ max_results = 250
 category_filter_ids = [2000, 5000]
 resolver_timeout = 30
 max_resolve = 50
-resolver_concurrency = 10
+resolver_concurrency = 2
 resolver_retries = 1
 resolver_retry_delay = 1
 
@@ -20,7 +20,8 @@ resolver_retry_delay = 1
 filter_low_quality = True  # Filter out 720p and below before resolving
 
 # Global rate limiter: prevent API bursts that trigger 429 on indexers like C411
-_RATE_LIMIT_DELAY = 5  # seconds between consecutive Prowlarr API requests
+_RATE_LIMIT_DELAY = 5  # seconds between consecutive Prowlarr search API requests
+_GRAB_DELAY = 3        # seconds between consecutive Prowlarr grab (t=get) requests
 _last_request_time = 0
 _rate_limit_lock = Lock()
 
@@ -36,6 +37,22 @@ def _rate_limited_get(url, headers, params, timeout):
             time.sleep(wait)
         _last_request_time = time.time()
         return session.get(url, headers=headers, params=params, timeout=timeout)
+
+def _grab_throttle():
+    """Space grab attempts to avoid bursts that trigger short-window 429 on indexers.
+    Shares the API rate-limit lock so search and grab calls don't burst together.
+    Releases the lock before the HTTP request so parallel grabs can overlap while
+    still starting at least _GRAB_DELAY seconds apart.
+    """
+    global _last_request_time
+    with _rate_limit_lock:
+        now = time.time()
+        elapsed = now - _last_request_time
+        if elapsed < _GRAB_DELAY:
+            wait = _GRAB_DELAY - elapsed
+            _debug(f'[prowlarr][rate-limit] waiting {wait:.1f}s before next grab')
+            time.sleep(wait)
+        _last_request_time = time.time()
 
 # Fallback negative cache: avoid spamming indexers when episode isn't available yet
 # Key: base_title (e.g. "pitt"), Value: {"ts": timestamp, "fails": consecutive_fail_count}
@@ -326,6 +343,7 @@ def _extract_season_numbers(title):
 def _get_with_retry(url, allow_redirects, timeout):
     for attempt in range(resolver_retries + 1):
         try:
+            _grab_throttle()
             return session.get(url, allow_redirects=allow_redirects, timeout=timeout)
         except requests.exceptions.Timeout:
             if attempt >= resolver_retries:
