@@ -488,6 +488,8 @@ class library(classes.library):
         sections = []
         partial = "true"
         delay = "2"
+        verify_interval = 15      # min seconds between re-scans while waiting for the debrid mount
+        verify_max_attempts = 12  # ~3 min total before giving up
 
         def setup(cls, new=False):
             ui_cls("Options/Settings/Library Services/Library update services")
@@ -655,6 +657,36 @@ class library(classes.library):
             except Exception as e:
                 ui_print(str(e), debug=ui_settings.debug)
 
+        def verify(paths, element):
+            # Re-scan Plex until the item is actually indexed. A debrid mount can
+            # expose the file several seconds/minutes after the download is sent,
+            # so a single scan often runs too early and misses it.
+            try:
+                try:
+                    interval = float(library.refresh.delay)
+                except:
+                    interval = 2
+                if interval < library.refresh.verify_interval:
+                    interval = library.refresh.verify_interval
+                attempts = library.refresh.verify_max_attempts
+                for attempt in range(attempts):
+                    library.refresh.call(paths)
+                    time.sleep(interval)
+                    try:
+                        _ = library(silent=True)
+                    except Exception:
+                        pass
+                    try:
+                        present = element.collected(current_library)
+                    except Exception:
+                        present = element in current_library
+                    if present:
+                        ui_print('[plex] "' + element.query() + '" indexed after ' + str(attempt + 1) + ' scan(s)', debug=ui_settings.debug)
+                        return
+                ui_print('[plex] warning: "' + element.query() + '" still not visible after ' + str(attempts) + ' scans (~' + str(int(attempts * interval)) + 's) - debrid mount may be slow')
+            except Exception as e:
+                ui_print('[plex] error in refresh verify: ' + str(e), debug=ui_settings.debug)
+
         def __new__(cls, element):
             try:
                 names = []
@@ -673,17 +705,11 @@ class library(classes.library):
                             else:
                                 folders += [requests.utils.quote(location.path)]
                         paths += [[section_.key,folders]]
-                delay = 2
-                try:
-                    delay = float(library.refresh.delay)
-                except:
-                    ui_print("[plex] error: provided refresh delay is not a number! using default 2 second delay.")
-                time.sleep(delay)
                 ui_print('[plex] refreshing '+element_type+' library section/s: "' + '","'.join(names) + '"')
-                results = [None]
-                t = Thread(target=multi_init, args=(library.refresh.call, paths, results, 0))
+                # Run the scan + verification in the background so it doesn't block the
+                # download loop. verify() re-scans until Plex actually indexes the item.
+                t = Thread(target=library.refresh.verify, args=(paths, element))
                 t.start()
-                t.join()
             except:
                 ui_print("[plex] error: couldnt refresh libraries. Make sure you have setup a plex user!")
 
